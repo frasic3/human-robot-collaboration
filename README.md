@@ -25,7 +25,7 @@ Implementation of **Human Pose Forecasting** models for collaborative robots on 
 - **Logic**: Calculate Euclidean distance between Human joints and Robot joints.
 - **Output**: Safety Score, Collision Warning.
 
-## 🏗️ Project Structure (TO-MODIFY)
+## 🏗️ Project Structure 
 
 ```
 human-robot-collaboration/
