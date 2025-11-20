@@ -30,21 +30,18 @@ Implementation of **Human Pose Forecasting** models for collaborative robots on 
 ```
 human-robot-collaboration/
 ├── datasets/                   # Dataset
-│   └── 3d_skeletons/
-│       └── S00/ ... S19/       # 20 subjects
+│   ├── 3d_skeletons/
+│   │   └── S00/ ... S19/                               # 20 subjects
+│   └── episodes/
+│       └── S00_hammmer/ ... S19_span_light_CRASH       # 20 subjects
 ├── models/                     # Neural architectures
 │   ├── mlp.py                  # MLP
 │   └── __init__.py
 ├── utils/                      # Utilities and metrics
 │   ├── metrics.py              # MPJPE and other metrics
-│   ├── cnn_data_loader.py                      # CNN Dataset loading
 │   ├── pkl_data_loader.py                      # .pkl Dataset loading
 │   ├── pose_estimation_data_loader.py          # Pose Dataset loading
 |   └── __init__.py
-├── inspect_pkl.py              # Visualization script
-├── coppelia_sim/               # CoppeliaSim integration
-│   ├── pick_and_place_UR5.py
-│   └── coppeliasim_zmqremoteapi_client/
 ├── checkpoints/                # Model checkpoints
 ├── runs/                       # TensorBoard logs
 ├── train.py                    # Training script
