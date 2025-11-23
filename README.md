@@ -15,7 +15,7 @@ Implementation of **Human Pose Forecasting** models for collaborative robots on 
 ### 2. Pose Forecasting (Action Prediction)
 - **Input**: Sequence of 3D Skeletons (10 frames)
 - **Model**: MLP (Multi-Layer Perceptron), LSTM, or CNN (1D Temporal)
-- **Output**: Future 3D Skeleton (12 frames)
+- **Output**: Future 3D Skeleton (25 frames)
 - **Goal**: Anticipate human and robot movement.
 - **Note**: LSTM and CNNs can also be tested here (CNNs can process coordinate sequences as 1D temporal data, not just images).
 
@@ -25,26 +25,27 @@ Implementation of **Human Pose Forecasting** models for collaborative robots on 
 - **Logic**: Calculate Euclidean distance between Human joints and Robot joints.
 - **Output**: Safety Score, Collision Warning.
 
-## 🏗️ Project Structure 
+## 🏗️ Project Structure (TO-MODIFY)
 
 ```
 human-robot-collaboration/
-├── datasets/                   # Dataset
+├── datasets/                                     # Dataset
 │   ├── 3d_skeletons/
-│   │   └── S00/ ... S19/                               # 20 subjects
+│   │   └── S00/ ... S19/                         # 20 subjects
 │   └── episodes/
-│       └── S00_hammmer/ ... S19_span_light_CRASH       # 20 subjects
-├── models/                     # Neural architectures
-│   ├── mlp.py                  # MLP
+|       └── S00_hammer/ ... S19_span_light_CRUSH/
+├── models/                                       # Neural architectures
+│   ├── mlp.py                                    # MLP
 │   └── __init__.py
-├── utils/                      # Utilities and metrics
-│   ├── metrics.py              # MPJPE and other metrics
-│   ├── pkl_data_loader.py                      # .pkl Dataset loading
-│   ├── pose_estimation_data_loader.py          # Pose Dataset loading
+├── utils/                                        # Utilities and metrics
+│   ├── metrics.py                                # MPJPE and other metrics
+│   ├── pkl_data_loader.py                        # .pkl Dataset loading
+│   ├── pose_estimation_data_loader.py           # Pose Dataset loading
 |   └── __init__.py
-├── checkpoints/                # Model checkpoints
-├── runs/                       # TensorBoard logs
-├── train.py                    # Training script
+├── inspect_pkl.py                               # Visualization script
+├── checkpoints/                                 # Model checkpoints
+├── runs/                                        # TensorBoard logs
+├── train.py                                     # Training script
 └── README_POSE_FORECASTING.md
 ```
 
@@ -52,7 +53,7 @@ human-robot-collaboration/
 
 ### MLP 
 - **Input**: 10 frames (400ms @ 25fps)
-- **Output**: 12 frames (0.48 seconds @ 25fps)
+- **Output**: 25 frames (1 second @ 25fps)
 - **Architecture**: FC(1024) → FC(512) → FC(256) → Output
 - **Parameters**: ~1.6M
 
@@ -61,7 +62,7 @@ human-robot-collaboration/
 ### Temporal Parameters
 ```python
 INPUT_FRAMES = 10       # 400ms history (observes movement)
-OUTPUT_FRAMES = 12      # 480ms prediction @ 25fps
+OUTPUT_FRAMES = 25      # 480ms prediction @ 25fps
 ```
 
 ### Dataset Split
