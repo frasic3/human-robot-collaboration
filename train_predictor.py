@@ -180,12 +180,13 @@ class Trainer:
         
         return avg_loss, avg_mpjpe
     
-    def validate(self, epoch: int) -> Tuple[float, float]:
+    def validate(self, epoch: int) -> Tuple[float, float, float, float]:
         """Validation"""
         self.model.eval()
         
         total_loss = 0
         total_mpjpe = 0
+        total_risk_acc = 0
         all_mpjpe_per_frame = []
         
         with torch.no_grad():
@@ -215,6 +216,7 @@ class Trainer:
                 
                 total_loss += loss.item()
                 total_mpjpe += metrics['mpjpe']
+                total_risk_acc += risk_acc.item()
                 all_mpjpe_per_frame.append(metrics['mpjpe_per_frame'])
                 
                 pbar.set_postfix({
@@ -225,26 +227,22 @@ class Trainer:
         
         avg_loss = total_loss / len(self.val_loader)
         avg_mpjpe = total_mpjpe / len(self.val_loader)
+        avg_risk_acc = total_risk_acc / len(self.val_loader)
         avg_mpjpe_per_frame = np.mean(all_mpjpe_per_frame, axis=0)
         
         # Logging
         self.writer.add_scalar('val/loss', avg_loss, epoch)
         self.writer.add_scalar('val/mpjpe', avg_mpjpe, epoch)
-        self.writer.add_scalar('val/risk_accuracy', risk_acc.item(), epoch)
+        self.writer.add_scalar('val/risk_accuracy', avg_risk_acc, epoch)
         
-        # MPJPE at last frame
-        if len(avg_mpjpe_per_frame) > 0:
-            mpjpe_last = avg_mpjpe_per_frame[-1]
-            self.writer.add_scalar('val/mpjpe_last_frame', mpjpe_last, epoch)
-            print(f"MPJPE @ last frame ({len(avg_mpjpe_per_frame)}): {mpjpe_last:.2f} mm")
-        
-        # MPJPE at 1 second (25 frames @ 25fps) - only if available
+        mpjpe_1sec = 0.0
         if len(avg_mpjpe_per_frame) >= 25:
             mpjpe_1sec = avg_mpjpe_per_frame[24]
             self.writer.add_scalar('val/mpjpe_1sec', mpjpe_1sec, epoch)
-            print(f"MPJPE @ 1 sec: {mpjpe_1sec:.2f} mm")
+        elif len(avg_mpjpe_per_frame) > 0:
+             mpjpe_1sec = avg_mpjpe_per_frame[-1]
         
-        return avg_loss, avg_mpjpe
+        return avg_loss, avg_mpjpe, avg_risk_acc, mpjpe_1sec
     
     def test(self) -> float:
         """Final test"""
@@ -325,18 +323,18 @@ class Trainer:
             train_loss, train_mpjpe = self.train_epoch(epoch)
             
             # Validate
-            val_loss, val_mpjpe = self.validate(epoch)
+            val_loss, val_mpjpe, val_risk_acc, val_mpjpe_1sec = self.validate(epoch)
             
             # Scheduler step
             self.scheduler.step(val_loss)
             
             # Logging
-            print(f"\n{'='*70}")
+            print(f"\n{'='*80}")
             print(f"Epoch {epoch}/{num_epochs}")
-            print(f"{'='*70}")
-            print(f"Train → Loss: {train_loss:>10.2f} | MPJPE: {train_mpjpe:>6.2f} mm")
-            print(f"Val   → Loss: {val_loss:>10.2f} | MPJPE: {val_mpjpe:>6.2f} mm")
-            print(f"{'='*70}")
+            print(f"{'='*80}")
+            print(f"Train → Loss: {train_loss:.4f} | MPJPE: {train_mpjpe:.2f} mm")
+            print(f"Val   → Loss: {val_loss:.4f} | MPJPE: {val_mpjpe:.2f} mm | Risk Acc: {val_risk_acc*100:.1f}% | @1s: {val_mpjpe_1sec:.2f} mm")
+            print(f"{'='*80}")
             
             # Save checkpoint
             is_best = val_loss < self.best_val_loss
@@ -367,10 +365,13 @@ if __name__ == "__main__":
     base_path = r"c:\Users\Proprietario\Desktop\human-robot-collaboration"
     dataset_path = os.path.join(base_path, "datasets", "3d_skeletons")
     
-    # Dataset split
-    train_subjects = [f'S{i:02d}' for i in range(16)]  # S00-S15
-    val_subjects = ['S16', 'S17']
-    test_subjects = ['S18', 'S19']
+    # Dataset split (Paper Protocol)
+    # Val: S00, S04
+    # Test: S02, S03, S18, S19
+    # Train: Rest
+    val_subjects = ['S00', 'S04']
+    test_subjects = ['S02', 'S03', 'S18', 'S19']
+    train_subjects = [f'S{i:02d}' for i in range(20) if f'S{i:02d}' not in val_subjects + test_subjects]
     
     # Hyperparameters
     INPUT_FRAMES = 10

@@ -70,6 +70,9 @@ class CHICODataset(Dataset):
         self.sequences = []
         self.load_data()
         
+        if self.normalize:
+            self._process_dataset()
+        
         print(f"Dataset loaded: {len(self.sequences)} sequences")
         
     def load_data(self):
@@ -137,63 +140,52 @@ class CHICODataset(Dataset):
     def __len__(self) -> int:
         return len(self.sequences)
     
+    def _process_dataset(self):
+        """
+        Applies normalization to the entire dataset in memory.
+        1. Root-Relative Normalization
+        2. Statistics Calculation (if not provided)
+        3. Z-Score Normalization
+        """
+        print("Processing dataset normalization...")
+        all_poses_for_stats = []
+        
+        # 1. Apply Root-Relative Normalization to ALL sequences
+        for i in range(len(self.sequences)):
+            input_seq = self.sequences[i]['input']
+            output_seq = self.sequences[i]['output']
+            
+            # Root is the first joint of the first frame of input
+            root = input_seq[0, 0, :].copy()
+            
+            self.sequences[i]['input'] = input_seq - root
+            self.sequences[i]['output'] = output_seq - root
+            
+            # Collect data for stats if we need to compute them
+            if self.stats is None:
+                # Concatenate input and output for stats calculation
+                seq = np.concatenate([self.sequences[i]['input'], self.sequences[i]['output']], axis=0)
+                all_poses_for_stats.append(seq)
+
+        # 2. Calculate Statistics if not provided
+        if self.stats is None:
+            print("Computing dataset statistics...")
+            all_poses = np.concatenate(all_poses_for_stats, axis=0)
+            mean = all_poses.mean(axis=(0, 1))
+            std = all_poses.std(axis=(0, 1))
+            self.stats = (mean, std)
+            print(f"Computed stats - Mean: {mean}, Std: {std}")
+            
+        # 3. Apply Z-Score Normalization
+        mean, std = self.stats
+        for i in range(len(self.sequences)):
+            self.sequences[i]['input'] = (self.sequences[i]['input'] - mean) / (std + 1e-8)
+            self.sequences[i]['output'] = (self.sequences[i]['output'] - mean) / (std + 1e-8)
+
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, str, bool]:
         sample = self.sequences[idx]
-        
-        input_seq = sample['input'].copy()  # (T, 24, 3)
-        output_seq = sample['output'].copy()  # (P, 24, 3)
-        
-        if self.normalize:
-            # Normalize relative to the first frame (root-relative)
-            root = input_seq[0, 0, :].copy()  # first joint of first frame
-            input_seq = input_seq - root
-            output_seq = output_seq - root
-        
-        # Apply Z-score normalization if stats are provided
-        if self.stats is not None:
-            mean, std = self.stats
-            input_seq = (input_seq - mean) / (std + 1e-8)
-            output_seq = (output_seq - mean) / (std + 1e-8)
-        
-        # Convert to torch tensors
-        input_tensor = torch.from_numpy(input_seq).float()
-        output_tensor = torch.from_numpy(output_seq).float()
-        
-        return input_tensor, output_tensor, sample['action'], sample['crash']
-    
-    def get_statistics(self) -> Tuple[np.ndarray, np.ndarray]:
-        """Calculate dataset statistics for normalization (on root-relative data)"""
-        print("Computing dataset statistics...")
-        
-        # Temporarily disable stats to get raw (but root-normalized) data
-        original_stats = self.stats
-        self.stats = None
-        
-        all_poses = []
-        
-        # Use a subset for speed if dataset is huge, or all data for accuracy
-        # Let's use a stride to speed up calculation if needed, or just iterate all
-        # Since we are in __init__, we can iterate all sequences
-        
-        for i in range(len(self.sequences)):
-            # Call __getitem__ which handles root-relative normalization
-            input_tensor, output_tensor, _, _ = self.__getitem__(i)
-            
-            # Concatenate input and output
-            seq = torch.cat([input_tensor, output_tensor], dim=0).numpy()
-            all_poses.append(seq)
-            
-        # Restore stats
-        self.stats = original_stats
-        
-        all_poses = np.concatenate(all_poses, axis=0)  # (Total_Frames, 24, 3)
-        
-        # Compute mean and std across frames and joints (global for x, y, z)
-        mean = all_poses.mean(axis=(0, 1))  # (3,)
-        std = all_poses.std(axis=(0, 1))    # (3,)
-        
-        print(f"Computed stats - Mean: {mean}, Std: {std}")
-        return mean, std
+        # Data is already normalized in memory
+        return torch.from_numpy(sample['input']).float(), torch.from_numpy(sample['output']).float(), sample['action'], sample['crash']
 
 
 def create_pkl_dataloaders(dataset_path: str,
@@ -213,7 +205,7 @@ def create_pkl_dataloaders(dataset_path: str,
     - Test: S18-S19 (2 subjects)
     """
     
-    # 1. Create training dataset first (without stats)
+    # 1. Create training dataset first (stats will be computed internally)
     print("Initializing Training Dataset...")
     train_dataset = CHICODataset(
         dataset_path=dataset_path,
@@ -226,11 +218,8 @@ def create_pkl_dataloaders(dataset_path: str,
         stats=None
     )
     
-    # 2. Calculate statistics from training data
-    stats = train_dataset.get_statistics()
-    
-    # 3. Update training dataset with stats
-    train_dataset.stats = stats
+    # 2. Get calculated stats
+    stats = train_dataset.stats
     
     print("Initializing Validation Dataset...")
     val_dataset = CHICODataset(
@@ -256,12 +245,15 @@ def create_pkl_dataloaders(dataset_path: str,
         stats=stats
     )
     
+    # Check if CUDA is available for pin_memory
+    pin_memory = torch.cuda.is_available()
+    
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
         shuffle=True,
         num_workers=num_workers,
-        pin_memory=True
+        pin_memory=pin_memory
     )
     
     val_loader = DataLoader(
@@ -269,7 +261,7 @@ def create_pkl_dataloaders(dataset_path: str,
         batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
-        pin_memory=True
+        pin_memory=pin_memory
     )
     
     test_loader = DataLoader(
@@ -277,7 +269,7 @@ def create_pkl_dataloaders(dataset_path: str,
         batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
-        pin_memory=True
+        pin_memory=pin_memory
     )
     
     return train_loader, val_loader, test_loader, stats
