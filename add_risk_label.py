@@ -14,6 +14,7 @@ def compute_frame_risk(human_joints, robot_joints):
     
     # Expand dims for broadcasting: (15, 1, 3) - (1, 9, 3)
     diff = human_joints[:, None, :] - robot_joints[None, :, :]
+    # Calculate Euclidean distances between all pairs of joints
     dists = np.linalg.norm(diff, axis=-1) # (15, 9)
     
     min_dist = dists.min()
