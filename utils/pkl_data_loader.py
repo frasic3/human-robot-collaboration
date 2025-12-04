@@ -101,8 +101,9 @@ class CHICODataset(Dataset):
         with open(file_path, 'rb') as f:
             data = pickle.load(f)
         
-        # data is a list of frames, each frame contains [human_joints, robot_joints]
-        # human_joints: (15, 3), robot_joints: (9, 3)
+        # data is a list of frames
+        # Old format: [human_joints, robot_joints]
+        # New format: [human_joints, robot_joints, risk_label]
         
         total_frames = len(data)
         sequence_length = self.input_frames + self.output_frames
@@ -113,24 +114,44 @@ class CHICODataset(Dataset):
             
             # Extract the sequence
             sequence = []
+            risk_sequence = []
+            
             for frame_idx in range(start_idx, end_idx):
                 frame = data[frame_idx]
                 human_joints = np.array(frame[0], dtype=np.float32)  # (15, 3)
                 robot_joints = np.array(frame[1], dtype=np.float32)  # (9, 3)
                 
+                # Read risk from file if available, else compute/default
+                if len(frame) >= 3:
+                    risk = frame[2]
+                else:
+                    # Fallback: compute on the fly if missing (e.g. old dataset)
+                    diff = human_joints[:, None, :] - robot_joints[None, :, :]
+                    min_dist = np.linalg.norm(diff, axis=-1).min()
+                    if min_dist < 200: risk = 2
+                    elif min_dist < 300: risk = 1
+                    else: risk = 0
+                
                 # Concatenate human and robot: (24, 3)
                 full_pose = np.vstack([human_joints, robot_joints])
                 sequence.append(full_pose)
+                risk_sequence.append(risk)
             
             sequence = np.array(sequence)  # (T+P, 24, 3)
+            risk_sequence = np.array(risk_sequence, dtype=np.int64)
             
             # Split into input and output
             input_seq = sequence[:self.input_frames]  # (T, 24, 3)
             output_seq = sequence[self.input_frames:]  # (P, 24, 3)
             
+            input_risk = risk_sequence[:self.input_frames]
+            output_risk = risk_sequence[self.input_frames:]
+
             self.sequences.append({
                 'input': input_seq,
                 'output': output_seq,
+                'input_risk': input_risk,
+                'output_risk': output_risk,
                 'subject': subject,
                 'action': action,
                 'crash': crash,
@@ -182,10 +203,15 @@ class CHICODataset(Dataset):
             self.sequences[i]['input'] = (self.sequences[i]['input'] - mean) / (std + 1e-8)
             self.sequences[i]['output'] = (self.sequences[i]['output'] - mean) / (std + 1e-8)
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, str, bool]:
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, str, bool]:
         sample = self.sequences[idx]
         # Data is already normalized in memory
-        return torch.from_numpy(sample['input']).float(), torch.from_numpy(sample['output']).float(), sample['action'], sample['crash']
+        return (torch.from_numpy(sample['input']).float(), 
+                torch.from_numpy(sample['output']).float(), 
+                torch.from_numpy(sample['input_risk']).long(),
+                torch.from_numpy(sample['output_risk']).long(),
+                sample['action'], 
+                sample['crash'])
 
 
 def create_pkl_dataloaders(dataset_path: str,

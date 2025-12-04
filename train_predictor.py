@@ -16,6 +16,9 @@ import json
 from datetime import datetime
 from typing import Optional, Tuple, Dict, Any
 import argparse
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.metrics import confusion_matrix, precision_recall_curve, average_precision_score, f1_score
 from utils.pkl_data_loader import create_pkl_dataloaders
 from models import MLP, LSTM
 from utils.metrics import compute_mpjpe, compute_metrics, compute_risk
@@ -72,11 +75,22 @@ class Trainer:
             experiment_name = f"{model.__class__.__name__}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     
         self.experiment_name = experiment_name
-        self.save_dir = os.path.join(save_dir, experiment_name)
+        # Use 'runs' directory instead of 'checkpoints' for better organization
+        self.save_dir = os.path.join('runs', experiment_name)
         os.makedirs(self.save_dir, exist_ok=True)
         
         self.best_val_loss = float('inf')
         self.global_step = 0
+        
+        # History
+        self.history = {
+            'train_loss': [],
+            'train_mpjpe': [],
+            'val_loss': [],
+            'val_mpjpe': [],
+            'val_risk_acc': [],
+            'val_mpjpe_1sec': []
+        }
 
         # Save configuration
         self.save_config(extra_config or {})
@@ -118,7 +132,7 @@ class Trainer:
         total_mpjpe = 0
         pbar = tqdm(self.train_loader, desc=f'Epoch {epoch} [Train]')
         
-        for batch_idx, (input_seq, target_seq, actions, crashes) in enumerate(pbar):
+        for batch_idx, (input_seq, target_seq, input_risk, output_risk, actions, crashes) in enumerate(pbar):
             input_seq = input_seq.to(self.device)
             target_seq = target_seq.to(self.device)
 
@@ -130,8 +144,25 @@ class Trainer:
             else:
                 output_seq = outputs
 
-            # Loss
-            loss = self.criterion(output_seq, target_seq)
+            # --- Weighted Loss (Risk-Aware) ---
+            # Calculate risk on Ground Truth to assign weights
+            with torch.no_grad():
+                target_denorm = self.denormalize(target_seq)
+                risk_info = compute_risk(target_denorm)
+                risk_classes = risk_info['risk_classes']  # (B, P)
+                
+                # Weights: Safe=1, Medium=5, High=20
+                weights = torch.ones_like(risk_classes, dtype=torch.float32)
+                weights[risk_classes == 1] = 5.0
+                weights[risk_classes == 2] = 20.0
+                
+                # Expand for broadcasting: (B, P) -> (B, P, 1, 1)
+                weights = weights.unsqueeze(-1).unsqueeze(-1)
+            
+            # Compute weighted MSE
+            loss_unreduced = torch.nn.functional.mse_loss(output_seq, target_seq, reduction='none')
+            loss = (loss_unreduced * weights).mean()
+            # ----------------------------------
             
             # Backward
             loss.backward()
@@ -173,7 +204,7 @@ class Trainer:
         with torch.no_grad():
             pbar = tqdm(self.val_loader, desc=f'Epoch {epoch} [Val]')
             
-            for input_seq, target_seq, actions, crashes in pbar:
+            for input_seq, target_seq, input_risk, output_risk, actions, crashes in pbar:
                 input_seq = input_seq.to(self.device)
                 target_seq = target_seq.to(self.device)
                 
@@ -250,6 +281,135 @@ class Trainer:
         saliency = input_seq.grad.abs()
         return saliency.detach()
 
+    def plot_results(self, dataset_name, all_risk_gt, all_risk_pred_cls, all_risk_scores, all_inputs, all_targets, all_preds, worst_indices, output_dir):
+        """Generate and save all requested plots"""
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # 1. Confusion Matrix
+        risk_gt_flat = all_risk_gt.view(-1).numpy()
+        risk_pred_flat = all_risk_pred_cls.view(-1).numpy()
+        
+        cm = confusion_matrix(risk_gt_flat, risk_pred_flat)
+        plt.figure(figsize=(8, 6))
+        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=['Low', 'Medium', 'High'], yticklabels=['Low', 'Medium', 'High'])
+        plt.xlabel('Predicted Risk')
+        plt.ylabel('True Risk')
+        plt.title(f'Confusion Matrix ({dataset_name})')
+        plt.savefig(os.path.join(output_dir, 'confusion_matrix.png'))
+        plt.close()
+        
+        # Normalized Confusion Matrix
+        cm_norm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+        plt.figure(figsize=(8, 6))
+        sns.heatmap(cm_norm, annot=True, fmt='.2f', cmap='Blues', xticklabels=['Low', 'Medium', 'High'], yticklabels=['Low', 'Medium', 'High'])
+        plt.xlabel('Predicted Risk')
+        plt.ylabel('True Risk')
+        plt.title(f'Normalized Confusion Matrix ({dataset_name})')
+        plt.savefig(os.path.join(output_dir, 'confusion_matrix_normalized.png'))
+        plt.close()
+        
+        # 2. PR Curve, F1 Curve, P Curve, R Curve (For High Risk Class)
+        # High Risk is Class 2. We use -min_distance as score (lower dist = higher risk)
+        y_true_high = (all_risk_gt.view(-1) == 2).float().numpy()
+        y_scores_high = -all_risk_scores.view(-1).numpy() # Negate distance so higher score = closer = higher risk
+        
+        precision, recall, thresholds = precision_recall_curve(y_true_high, y_scores_high)
+        
+        # PR Curve
+        plt.figure(figsize=(8, 6))
+        plt.plot(recall, precision, label='High Risk')
+        plt.xlabel('Recall')
+        plt.ylabel('Precision')
+        plt.title(f'Precision-Recall Curve ({dataset_name})')
+        plt.legend()
+        plt.grid(True)
+        plt.savefig(os.path.join(output_dir, 'PR_curve.png'))
+        plt.close()
+        
+        # F1 Curve vs Threshold (using distance thresholds implicitly via score)
+        f1_scores = 2 * (precision * recall) / (precision + recall + 1e-8)
+        plt.figure(figsize=(8, 6))
+        plt.plot(thresholds, f1_scores[:-1], label='F1 Score')
+        plt.xlabel('Score Threshold (-Distance)')
+        plt.ylabel('F1 Score')
+        plt.title(f'F1 Curve ({dataset_name})')
+        plt.legend()
+        plt.grid(True)
+        plt.savefig(os.path.join(output_dir, 'F1_curve.png'))
+        plt.close()
+        
+        # Precision Curve
+        plt.figure(figsize=(8, 6))
+        plt.plot(thresholds, precision[:-1], label='Precision')
+        plt.xlabel('Score Threshold (-Distance)')
+        plt.ylabel('Precision')
+        plt.title(f'Precision Curve ({dataset_name})')
+        plt.legend()
+        plt.grid(True)
+        plt.savefig(os.path.join(output_dir, 'P_curve.png'))
+        plt.close()
+        
+        # Recall Curve
+        plt.figure(figsize=(8, 6))
+        plt.plot(thresholds, recall[:-1], label='Recall')
+        plt.xlabel('Score Threshold (-Distance)')
+        plt.ylabel('Recall')
+        plt.title(f'Recall Curve ({dataset_name})')
+        plt.legend()
+        plt.grid(True)
+        plt.savefig(os.path.join(output_dir, 'R_curve.png'))
+        plt.close()
+        
+        # 3. Visualizations (Worst Cases & Random Good Cases)
+        
+        # Worst Cases
+        for i, idx in enumerate(worst_indices[:5]): # Top 5 worst
+            idx = idx.item()
+            self._plot_sample(all_inputs[idx], all_targets[idx], all_preds[idx], 
+                              f'Worst Case #{i+1}', os.path.join(output_dir, f'worst_case_{i+1}.png'))
+            
+        # Random Good Cases (Low Error)
+        diff = all_preds - all_targets
+        sample_errors = torch.norm(diff, dim=-1).mean(dim=(1, 2))
+        # Get indices with low error (bottom 10%)
+        good_indices = torch.nonzero(sample_errors < torch.quantile(sample_errors, 0.1)).squeeze()
+        if len(good_indices.shape) > 0 and len(good_indices) > 0:
+             # Pick 3 random good cases
+            perm = torch.randperm(len(good_indices))
+            selected_good = good_indices[perm[:3]]
+            
+            for i, idx in enumerate(selected_good):
+                idx = idx.item()
+                self._plot_sample(all_inputs[idx], all_targets[idx], all_preds[idx], 
+                                  f'Good Case #{i+1}', os.path.join(output_dir, f'good_case_{i+1}.png'))
+
+    def _plot_sample(self, inp, tgt, prd, title, save_path):
+        plt.figure(figsize=(12, 5))
+        
+        # View 1: Top View (X-Z plane)
+        plt.subplot(1, 2, 1)
+        plt.title(f"{title} - Top View (X-Z)")
+        plt.scatter(inp[-1, :, 0], inp[-1, :, 2], c='black', label='Input', alpha=0.5)
+        plt.scatter(tgt[-1, :, 0], tgt[-1, :, 2], c='green', label='Target', marker='x')
+        plt.scatter(prd[-1, :, 0], prd[-1, :, 2], c='red', label='Pred', marker='o')
+        plt.xlabel('X (Lateral)')
+        plt.ylabel('Z (Depth)')
+        plt.legend()
+        
+        # View 2: Side View (Y-Z plane)
+        plt.subplot(1, 2, 2)
+        plt.title(f"{title} - Side View (Y-Z)")
+        plt.scatter(inp[-1, :, 2], inp[-1, :, 1], c='black', label='Input (Last)', alpha=0.5)
+        plt.scatter(tgt[-1, :, 2], tgt[-1, :, 1], c='green', label='Target (Last)', marker='x')
+        plt.scatter(prd[-1, :, 2], prd[-1, :, 1], c='red', label='Pred (Last)', marker='o')
+        plt.xlabel('Z (Depth)')
+        plt.ylabel('Y (Height)')
+        plt.legend()
+        
+        plt.tight_layout()
+        plt.savefig(save_path)
+        plt.close()
+
     def evaluate_dataset(self, loader, dataset_name: str) -> float:
         """
         Evaluate model on a specific dataset and save ALL data for analysis.
@@ -268,6 +428,7 @@ class Trainer:
         all_hiddens = []
         all_risk_gt = []
         all_risk_pred = []
+        all_risk_scores = []
         all_actions = []
         all_crashes = []
         
@@ -276,7 +437,7 @@ class Trainer:
         with torch.no_grad():
             pbar = tqdm(loader, desc=f'Eval {dataset_name}')
             
-            for input_seq, target_seq, actions, crashes in pbar:
+            for input_seq, target_seq, input_risk, output_risk, actions, crashes in pbar:
                 input_seq = input_seq.to(self.device)
                 target_seq = target_seq.to(self.device)
                 
@@ -299,8 +460,11 @@ class Trainer:
                 metrics = compute_metrics(output_denorm, target_denorm)
                 
                 # Risk
-                pred_risk = compute_risk(output_denorm)['risk_classes']
-                gt_risk = compute_risk(target_denorm)['risk_classes']
+                pred_risk_info = compute_risk(output_denorm)
+                gt_risk_info = compute_risk(target_denorm)
+                
+                pred_risk = pred_risk_info['risk_classes']
+                gt_risk = gt_risk_info['risk_classes']
                 
                 total_mpjpe += metrics['mpjpe']
                 all_mpjpe_per_frame.append(metrics['mpjpe_per_frame'])
@@ -312,6 +476,7 @@ class Trainer:
                 all_preds.append(output_denorm.cpu())
                 all_risk_gt.append(gt_risk.cpu())
                 all_risk_pred.append(pred_risk.cpu())
+                all_risk_scores.append(pred_risk_info['min_distances'].cpu())
                 all_actions.append(actions) # actions is likely a list or tensor
                 all_crashes.append(crashes) # crashes is likely a list or tensor
         
@@ -323,6 +488,7 @@ class Trainer:
         all_hiddens = torch.cat(all_hiddens, dim=0)
         all_risk_gt = torch.cat(all_risk_gt, dim=0)
         all_risk_pred = torch.cat(all_risk_pred, dim=0)
+        all_risk_scores = torch.cat(all_risk_scores, dim=0)
         
         # Handle actions/crashes which might be lists of strings or tensors
         # Assuming they are tensors or lists of tensors from the loader
@@ -343,21 +509,7 @@ class Trainer:
         print(f"\n=== {dataset_name} Results ===")
         print(f"Average MPJPE: {avg_mpjpe:.2f} mm")
         
-        # --- Analysis & Saving ---
-        
-        # 1. Confusion Matrix for Risk
-        risk_gt_flat = all_risk_gt.view(-1)
-        risk_pred_flat = all_risk_pred.view(-1)
-        
-        num_classes = 3
-        confusion_matrix = torch.zeros(num_classes, num_classes, dtype=torch.long)
-        for t, p in zip(risk_gt_flat, risk_pred_flat):
-            confusion_matrix[t.long(), p.long()] += 1
-            
-        print(f"\nRisk Confusion Matrix ({dataset_name}):")
-        print(confusion_matrix)
-        
-        # 2. Identify "Complicated Patterns" (Highest Error Samples)
+        # Identify "Complicated Patterns" (Highest Error Samples)
         diff = all_preds - all_targets
         sample_errors = torch.norm(diff, dim=-1).mean(dim=(1, 2)) # Mean over time and joints
         
@@ -367,7 +519,7 @@ class Trainer:
         
         print(f"\nComputing Saliency Maps for top {k} worst predictions in {dataset_name}...")
         
-        # 3. Compute Saliency for worst samples
+        # Compute Saliency for worst samples
         saliency_maps = []
         batch_size = 10
         
@@ -387,8 +539,13 @@ class Trainer:
             
         saliency_maps = torch.cat(saliency_maps, dim=0)
         
-        # 4. Save All Data
-        save_path = os.path.join(self.save_dir, f'{dataset_name}_analysis_data.pt')
+        # --- Generate Plots & Save Results ---
+        output_dir = os.path.join(self.save_dir, dataset_name)
+        self.plot_results(dataset_name, all_risk_gt, all_risk_pred, all_risk_scores, 
+                          all_inputs, all_targets, all_preds, worst_indices, output_dir)
+        
+        # Save Raw Data
+        save_path = os.path.join(output_dir, f'{dataset_name}_analysis_data.pt')
         print(f"Saving {dataset_name} analysis data to {save_path}...")
         
         torch.save({
@@ -400,7 +557,6 @@ class Trainer:
             'risk_pred': all_risk_pred,
             'actions': all_actions,
             'crashes': all_crashes,
-            'confusion_matrix': confusion_matrix,
             'worst_indices': worst_indices,
             'worst_saliency_maps': saliency_maps, # Saliency for the worst cases
             'avg_mpjpe': avg_mpjpe,
@@ -444,6 +600,18 @@ class Trainer:
             # Scheduler step
             self.scheduler.step(val_loss)
             
+            # Update History
+            self.history['train_loss'].append(float(train_loss))
+            self.history['train_mpjpe'].append(float(train_mpjpe))
+            self.history['val_loss'].append(float(val_loss))
+            self.history['val_mpjpe'].append(float(val_mpjpe))
+            self.history['val_risk_acc'].append(float(val_risk_acc))
+            self.history['val_mpjpe_1sec'].append(float(val_mpjpe_1sec))
+            
+            # Save History
+            with open(os.path.join(self.save_dir, 'history.json'), 'w') as f:
+                json.dump(self.history, f, indent=4)
+            
             # Logging
             print(f"\n{'='*80}")
             print(f"Epoch {epoch}/{num_epochs}")
@@ -484,7 +652,7 @@ if __name__ == "__main__":
 
     # Configuration
     base_path = r"c:\Users\Proprietario\Desktop\human-robot-collaboration"
-    dataset_path = os.path.join(base_path, "datasets", "3d_skeletons")
+    dataset_path = os.path.join(base_path, "datasets", "3d_skeletons_risk")
     
     # Dataset split (Paper Protocol)
     # Val: S00, S04
@@ -533,14 +701,14 @@ if __name__ == "__main__":
             dropout=0.2
         )
     elif args.model == 'lstm':
-        print("\nCreating LSTM model...")
+        print("\nCreating LSTM model con dropout 0.5...")
         model = LSTM(
             input_frames=INPUT_FRAMES,
             output_frames=OUTPUT_FRAMES,
             num_joints=24,
             hidden_dim=1024,
             num_layers=2,
-            dropout=0.2
+            dropout=0.5
         )
     
     # Create trainer
