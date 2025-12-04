@@ -34,7 +34,8 @@ class CHICODataset(Dataset):
                  stride: int = 1,
                  use_crash: bool = True,
                  normalize: bool = True,
-                 stats: Tuple[np.ndarray, np.ndarray] = None):
+                 stats: Tuple[np.ndarray, np.ndarray] = None,
+                 mode: str = 'sequence'): # 'sequence' or 'single_frame'
         """
         Args:
             dataset_path: path to the dataset folder
@@ -46,6 +47,7 @@ class CHICODataset(Dataset):
             use_crash: if True, include _CRASH versions
             normalize: if True, normalize coordinates (root-relative)
             stats: tuple (mean, std) for Z-score normalization. If None, no Z-score.
+            mode: 'sequence' for LSTM (T+P frames), 'single_frame' for MLP (1 frame)
         """
         self.dataset_path = dataset_path
         self.input_frames = input_frames
@@ -53,6 +55,7 @@ class CHICODataset(Dataset):
         self.stride = stride
         self.normalize = normalize
         self.stats = stats
+        self.mode = mode
         
         # Default: all subjects and all actions
         if subjects is None:
@@ -73,7 +76,7 @@ class CHICODataset(Dataset):
         if self.normalize:
             self._process_dataset()
         
-        print(f"Dataset loaded: {len(self.sequences)} sequences")
+        print(f"Dataset loaded: {len(self.sequences)} samples (Mode: {self.mode})")
         
     def load_data(self):
         """Load all .pkl files and create sequences"""
@@ -88,76 +91,69 @@ class CHICODataset(Dataset):
                 # Normal version
                 file_path = os.path.join(subject_path, f'{action}.pkl')
                 if os.path.exists(file_path):
-                    self._process_file(file_path, subject, action, crash=False)
+                    self._process_file(file_path)
                 
                 # CRASH version
                 if self.use_crash:
                     crash_path = os.path.join(subject_path, f'{action}_CRASH.pkl')
                     if os.path.exists(crash_path):
-                        self._process_file(crash_path, subject, action, crash=True)
+                        self._process_file(crash_path)
     
-    def _process_file(self, file_path: str, subject: str, action: str, crash: bool):
+    def _process_file(self, file_path: str):
         """Process a single file and create sequences"""
         with open(file_path, 'rb') as f:
             data = pickle.load(f)
-        
-        # data is a list of frames
-        # Old format: [human_joints, robot_joints]
-        # New format: [human_joints, robot_joints, risk_label]
-        
-        total_frames = len(data)
-        sequence_length = self.input_frames + self.output_frames
-        
-        # Create sliding sequences
-        for start_idx in range(0, total_frames - sequence_length + 1, self.stride):
-            end_idx = start_idx + sequence_length
-            
-            # Extract the sequence
-            sequence = []
-            risk_sequence = []
-            
-            for frame_idx in range(start_idx, end_idx):
-                frame = data[frame_idx]
-                human_joints = np.array(frame[0], dtype=np.float32)  # (15, 3)
-                robot_joints = np.array(frame[1], dtype=np.float32)  # (9, 3)
-                
-                # Read risk from file if available, else compute/default
-                if len(frame) >= 3:
-                    risk = frame[2]
-                else:
-                    # Fallback: compute on the fly if missing (e.g. old dataset)
-                    diff = human_joints[:, None, :] - robot_joints[None, :, :]
-                    min_dist = np.linalg.norm(diff, axis=-1).min()
-                    if min_dist < 200: risk = 2
-                    elif min_dist < 300: risk = 1
-                    else: risk = 0
-                
-                # Concatenate human and robot: (24, 3)
-                full_pose = np.vstack([human_joints, robot_joints])
-                sequence.append(full_pose)
-                risk_sequence.append(risk)
-            
-            sequence = np.array(sequence)  # (T+P, 24, 3)
-            risk_sequence = np.array(risk_sequence, dtype=np.int64)
-            
-            # Split into input and output
-            input_seq = sequence[:self.input_frames]  # (T, 24, 3)
-            output_seq = sequence[self.input_frames:]  # (P, 24, 3)
-            
-            input_risk = risk_sequence[:self.input_frames]
-            output_risk = risk_sequence[self.input_frames:]
 
-            self.sequences.append({
-                'input': input_seq,
-                'output': output_seq,
-                'input_risk': input_risk,
-                'output_risk': output_risk,
-                'subject': subject,
-                'action': action,
-                'crash': crash,
-                'start_frame': start_idx
-            })
+        total_frames = len(data)
+        
+        if self.mode == 'single_frame': # For MLP treat each frame as a sample
+
+            for i in range(0, total_frames, self.stride):
+                frame = data[i]
+                human_joints = np.array(frame[0], dtype=np.float32) # (15, 3)
+                robot_joints = np.array(frame[1], dtype=np.float32) # (9, 3)
+                full_pose = np.vstack([human_joints, robot_joints]) # (24, 3)
+                risk = frame[2]
+
+                self.sequences.append({
+                    'input': full_pose, # (24, 3)
+                    'risk': risk
+                })
+                
+        else: # Sequence mode for LSTM
+            sequence_length = self.input_frames + self.output_frames
+            
+            # Create sliding sequences, be careful with bounds
+            for start_idx in range(0, total_frames - sequence_length + 1, self.stride):
+                
+                input_seq_list = []
+                output_risk_list = []
+                
+                for i in range(sequence_length):
+                    frame_idx = start_idx + i
+                    frame = data[frame_idx]
+                    
+                    if i < self.input_frames:
+                        # Input part (First T frames): Extract Poses
+                        human_joints = np.array(frame[0], dtype=np.float32) # (15, 3)
+                        robot_joints = np.array(frame[1], dtype=np.float32) # (9, 3)
+                        full_pose = np.vstack([human_joints, robot_joints]) # (24, 3)
+                        input_seq_list.append(full_pose)
+                    else:
+                        # Output part (Next P frames): Extract Risk Labels
+                        risk = frame[2]
+                        output_risk_list.append(risk)
+                
+                # Convert to numpy arrays with explicit shapes
+                input_seq = np.array(input_seq_list)                     # Shape: (T, 24, 3)
+                output_risk = np.array(output_risk_list, dtype=np.int64) # Shape: (P,)
+
+                self.sequences.append({
+                    'input': input_seq,
+                    'output_risk': output_risk
+                })
     
+    # Get dataset length, useful for DataLoader
     def __len__(self) -> int:
         return len(self.sequences)
     
@@ -169,49 +165,73 @@ class CHICODataset(Dataset):
         3. Z-Score Normalization
         """
         print("Processing dataset normalization...")
-        all_poses_for_stats = []
+        need_stats = self.stats is None
+        all_poses_for_stats = [] if need_stats else None
         
-        # 1. Apply Root-Relative Normalization to ALL sequences
-        for i in range(len(self.sequences)):
-            input_seq = self.sequences[i]['input']
-            output_seq = self.sequences[i]['output']
+        if self.mode == 'single_frame':
+            # 1. Root-relative normalization + collect stats
+            for i in range(len(self.sequences)):
+                pose = self.sequences[i]['input'] # (24, 3)
+                pose = pose - pose[0, :] # Subtract root (first joint)
+                self.sequences[i]['input'] = pose
+                if need_stats:
+                    all_poses_for_stats.append(pose)
             
-            # Root is the first joint of the first frame of input
-            root = input_seq[0, 0, :].copy()
+            # 2. Compute stats if needed
+            if need_stats:
+                print("Computing dataset statistics (Single Frame)...")
+                all_poses = np.stack(all_poses_for_stats, axis=0) # (N, 24, 3)
+                mean = all_poses.mean(axis=(0, 1))
+                std = all_poses.std(axis=(0, 1))
+                self.stats = (mean, std)
+                print(f"Computed stats - Mean: {mean}, Std: {std}")
             
-            self.sequences[i]['input'] = input_seq - root
-            self.sequences[i]['output'] = output_seq - root
-            
-            # Collect data for stats if we need to compute them
-            if self.stats is None:
-                # Concatenate input and output for stats calculation
-                seq = np.concatenate([self.sequences[i]['input'], self.sequences[i]['output']], axis=0)
-                all_poses_for_stats.append(seq)
+            # 3. Z-score normalization
+            mean, std = self.stats
+            for i in range(len(self.sequences)):
+                self.sequences[i]['input'] = (self.sequences[i]['input'] - mean) / (std + 1e-8)
+                
+        else:
+            # 1. Root-relative normalization + collect stats
+            for i in range(len(self.sequences)):
+                input_seq = self.sequences[i]['input']
+                input_seq = input_seq - input_seq[0, 0, :] # Subtract root (first joint, first frame)
+                self.sequences[i]['input'] = input_seq
+                if need_stats:
+                    all_poses_for_stats.append(input_seq)
 
-        # 2. Calculate Statistics if not provided
-        if self.stats is None:
-            print("Computing dataset statistics...")
-            all_poses = np.concatenate(all_poses_for_stats, axis=0)
-            mean = all_poses.mean(axis=(0, 1))
-            std = all_poses.std(axis=(0, 1))
-            self.stats = (mean, std)
-            print(f"Computed stats - Mean: {mean}, Std: {std}")
-            
-        # 3. Apply Z-Score Normalization
-        mean, std = self.stats
-        for i in range(len(self.sequences)):
-            self.sequences[i]['input'] = (self.sequences[i]['input'] - mean) / (std + 1e-8)
-            self.sequences[i]['output'] = (self.sequences[i]['output'] - mean) / (std + 1e-8)
+            # 2. Compute stats if needed
+            if need_stats:
+                print("Computing dataset statistics (Sequence)...")
+                all_poses = np.concatenate(all_poses_for_stats, axis=0)
+                mean = all_poses.mean(axis=(0, 1))
+                std = all_poses.std(axis=(0, 1))
+                self.stats = (mean, std)
+                print(f"Computed stats - Mean: {mean}, Std: {std}")
+                
+            # 3. Z-score normalization
+            mean, std = self.stats
+            for i in range(len(self.sequences)):
+                self.sequences[i]['input'] = (self.sequences[i]['input'] - mean) / (std + 1e-8)
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, str, bool]:
+    # Get a sample, useful for DataLoader
+    def __getitem__(self, idx: int):
         sample = self.sequences[idx]
-        # Data is already normalized in memory
-        return (torch.from_numpy(sample['input']).float(), 
-                torch.from_numpy(sample['output']).float(), 
-                torch.from_numpy(sample['input_risk']).long(),
-                torch.from_numpy(sample['output_risk']).long(),
-                sample['action'], 
-                sample['crash'])
+        
+        # Convert input to tensor
+        x = torch.from_numpy(sample['input']).float()
+        
+        if self.mode == 'single_frame':
+            # (24, 3) -> (72,)
+            x = x.view(-1)
+            y = torch.tensor(sample['risk'], dtype=torch.long)
+        else:
+            # (T, 24, 3) -> (T, 72)
+            x = x.view(x.size(0), -1)
+            y = torch.from_numpy(sample['output_risk']).long()
+            
+        return x, y
+
 
 
 def create_pkl_dataloaders(dataset_path: str,
@@ -221,14 +241,10 @@ def create_pkl_dataloaders(dataset_path: str,
                        input_frames: int = 10,
                        output_frames: int = 25,
                        batch_size: int = 32,
-                       num_workers: int = 4) -> Tuple[DataLoader, DataLoader, DataLoader, Tuple[np.ndarray, np.ndarray]]:
+                       num_workers: int = 4,
+                       mode: str = 'sequence') -> Tuple[DataLoader, DataLoader, DataLoader, Tuple[np.ndarray, np.ndarray]]:
     """
     Create dataloaders for train, validation and test
-    
-    Example split:
-    - Train: S00-S15 (16 subjects)
-    - Val: S16-S17 (2 subjects)
-    - Test: S18-S19 (2 subjects)
     """
     
     # 1. Create training dataset first (stats will be computed internally)
@@ -238,10 +254,11 @@ def create_pkl_dataloaders(dataset_path: str,
         subjects=train_subjects,
         input_frames=input_frames,
         output_frames=output_frames,
-        stride=1,
+        stride=1 if mode == 'sequence' else 10, # Higher stride for single frame to avoid too much data
         use_crash=True,
         normalize=True,
-        stats=None
+        stats=None,
+        mode=mode
     )
     
     # 2. Get calculated stats
@@ -253,10 +270,11 @@ def create_pkl_dataloaders(dataset_path: str,
         subjects=val_subjects,
         input_frames=input_frames,
         output_frames=output_frames,
-        stride=5,  # Larger stride for validation
+        stride=5 if mode == 'sequence' else 20,
         use_crash=True,
         normalize=True,
-        stats=stats
+        stats=stats,
+        mode=mode
     )
     
     print("Initializing Test Dataset...")
@@ -265,10 +283,11 @@ def create_pkl_dataloaders(dataset_path: str,
         subjects=test_subjects,
         input_frames=input_frames,
         output_frames=output_frames,
-        stride=10,  # Larger stride for test
+        stride=10 if mode == 'sequence' else 30,
         use_crash=True,
         normalize=True,
-        stats=stats
+        stats=stats,
+        mode=mode
     )
     
     # Check if CUDA is available for pin_memory

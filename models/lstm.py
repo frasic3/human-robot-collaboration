@@ -1,123 +1,69 @@
 import torch
 import torch.nn as nn
 
-from typing import Tuple
-
-class LSTM(nn.Module):
-    def __init__(self, 
-
-                 input_frames: int = 10,
-
-                 output_frames: int = 25,
-
-                 num_joints: int = 24,
-
-                 hidden_dim: int = 1024,
-
-                 num_layers: int = 2,
-
-                 dropout: float = 0.2):
-        super(LSTM, self).__init__()
+class RiskLSTM(nn.Module):
+    def __init__(self, input_size=72, hidden_size=128, num_layers=2, num_classes=3, output_frames=25):
+        super(RiskLSTM, self).__init__()
         
-
-        self.input_frames = input_frames
-
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
         self.output_frames = output_frames
-
-        self.num_joints = num_joints
-
-        self.input_dim = num_joints * 3  # 24 joints * 3 coords (x,y,z)
+        self.num_classes = num_classes
         
-
-        # Encoder LSTM
-
-        # Takes sequence of poses and produces a hidden state
-
-        self.lstm = nn.LSTM(
-
-            input_size=self.input_dim,
-
-            hidden_size=hidden_dim,
-
-            num_layers=num_layers,
-
-            batch_first=True,
-
-            dropout=dropout if num_layers > 1 else 0
-        )
+        # Encoder
+        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True, dropout=0.2)
         
-
-        # Decoder (Predictor)
-
-        # Maps the final hidden state to the full future sequence
-
-        # We use a simple MLP decoder here to map from hidden state to all future frames at once
-
-        # Alternatively, we could use an autoregressive decoder, but this is faster and often more stable
-
+        # Decoder (Predicts sequence of risks from final hidden state)
+        # Maps hidden_size -> output_frames * num_classes
         self.decoder = nn.Sequential(
-
-            nn.Linear(hidden_dim, hidden_dim),
-
+            nn.Linear(hidden_size, hidden_size),
             nn.ReLU(),
-
-            nn.Dropout(dropout),
-
-            nn.Linear(hidden_dim, output_frames * self.input_dim)
+            nn.Dropout(0.2),
+            nn.Linear(hidden_size, output_frames * num_classes)
         )
         
-
-    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
-
+    def forward(self, x):
         """
-
-        Args:
-
-            x: Input tensor of shape (Batch, Input_Frames, Joints, 3)
-            
-
-        Returns:
-
-            prediction: Predicted future poses (Batch, Output_Frames, Joints, 3)
-
-            (h_n, c_n): Final hidden and cell states from the LSTM. 
-
-                        Useful for analysis (latent space visualization, etc.)
-
+        Spiegazione passo-passo del flusso dei dati:
+        x: Input Batch. Shape: (Batch_Size, T_input, 72)
+           Esempio: (32, 10, 72) -> 32 sequenze, lunghe 10 frame, con 72 features ciascuna.
         """
-
-        batch_size = x.size(0)
+        B = x.size(0) # Batch size (es. 32)
         
-
-        # Flatten joints: (B, T, J, 3) -> (B, T, J*3)
-
-        x = x.view(batch_size, self.input_frames, -1)
-        
-
-        # LSTM Forward
-
-        # out: (B, T, hidden_dim) - output features for each frame
-
-        # (h_n, c_n): (num_layers, B, hidden_dim) - final states
-
+        # -------------------------------------------------------
+        # 1. ENCODER (La LSTM "guarda" la sequenza passata)
+        # -------------------------------------------------------
+        # La LSTM processa internamente i 10 frame uno alla volta.
+        # Non serve un ciclo for esplicito, PyTorch lo fa in C++ (molto veloce).
+        #
+        # lstm_out: contiene gli stati intermedi per ogni istante t (da 1 a 10).
+        #           Shape: (Batch, 10, 128) -> Non ci serve per la predizione futura.
+        #
+        # (h_n, c_n): sono lo stato della memoria ALLA FINE della sequenza (dopo il 10° frame).
+        #             h_n Shape: (Num_Layers, Batch, 128)
         lstm_out, (h_n, c_n) = self.lstm(x)
         
-
-        # We use the output of the last time step to predict the future
-
-        last_time_step_feature = lstm_out[:, -1, :]  # (B, hidden_dim)
+        # Prendiamo l'hidden state dell'ultimo layer LSTM.
+        # Questo vettore è il "RIASSUNTO" compresso di tutto ciò che è successo nei 10 frame.
+        final_memory = h_n[-1] # Shape: (Batch, 128)
         
-
-        # Decode to future frames
-
-        # (B, hidden_dim) -> (B, Output_Frames * J * 3)
-
-        prediction_flat = self.decoder(last_time_step_feature)
+        # -------------------------------------------------------
+        # 2. DECODER (Dalla memoria, predice il futuro)
+        # -------------------------------------------------------
+        # Il decoder prende SOLO il riassunto finale (128 numeri) e deve
+        # "srotolarlo" per generare 25 frame futuri di rischio.
         
-
-        # Reshape back to (B, Output_Frames, J, 3)
-
-        prediction = prediction_flat.view(batch_size, self.output_frames, self.num_joints, 3)
+        # Passaggio attraverso i layer lineari del decoder
+        # Input: (Batch, 128) -> Output: (Batch, 25 * 3)
+        flattened_prediction = self.decoder(final_memory)
         
-        return prediction, (h_n, c_n)
+        # -------------------------------------------------------
+        # 3. RESHAPE (Mettiamo in ordine l'output)
+        # -------------------------------------------------------
+        # L'output è un vettore piatto lungo 75 (25 frame * 3 classi).
+        # Lo ritrasformiamo in una sequenza temporale.
+        # Shape finale: (Batch, 25, 3)
+        prediction = flattened_prediction.view(B, self.output_frames, self.num_classes)
+        
+        return prediction
 
