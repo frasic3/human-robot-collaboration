@@ -30,7 +30,7 @@ VAL_SUBJECTS = ['S00', 'S04']
 TEST_SUBJECTS = ['S02', 'S03', 'S18', 'S19']
 
 # Risk Configuration 
-RISK_WEIGHTS = [1.0, 2.0, 100.0]
+RISK_WEIGHTS = [1.0, 1.0, 100.0]
 CLASS_NAMES = ['Safe', 'Near-Collision', 'Collision']
 
 
@@ -196,7 +196,7 @@ if __name__ == "__main__":
     parser.add_argument('--epochs', type=int, default=50)
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--lr', type=float, default=1e-3)
-    parser.add_argument('--num_workers', type=int, default=0)
+    parser.add_argument('--num_workers', type=int, default=0, help="Number of DataLoader workers")
     parser.add_argument('--threshold', type=float, default=0.90, help="Collision probability threshold")
     args = parser.parse_args()
     
