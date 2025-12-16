@@ -15,7 +15,7 @@ import numpy as np
 import os
 from typing import List, Tuple, Dict, Any
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 
 class CHICODataset(Dataset):
     """
@@ -35,7 +35,9 @@ class CHICODataset(Dataset):
                  use_crash: bool = True,
                  normalize: bool = True,
                  stats: Tuple[np.ndarray, np.ndarray] = None,
-                 mode: str = 'sequence'): # 'sequence' or 'single_frame'
+                 mode: str = 'sequence',  # 'sequence' or 'single_frame'
+                 augment_collision: bool = False,  # Data augmentation per classe Collision
+                 augment_factor: int = 50):  # Numero di copie augmentate per ogni sample Collision
         """
         Args:
             dataset_path: path to the dataset folder
@@ -48,6 +50,8 @@ class CHICODataset(Dataset):
             normalize: if True, normalize coordinates (root-relative)
             stats: tuple (mean, std) for Z-score normalization. If None, no Z-score.
             mode: 'sequence' for LSTM (T+P frames), 'single_frame' for MLP (1 frame)
+            augment_collision: if True, apply data augmentation to Collision class
+            augment_factor: number of augmented copies for each Collision sample
         """
         self.dataset_path = dataset_path
         self.input_frames = input_frames
@@ -56,6 +60,8 @@ class CHICODataset(Dataset):
         self.normalize = normalize
         self.stats = stats
         self.mode = mode
+        self.augment_collision = augment_collision
+        self.augment_factor = augment_factor
         
         # Default: all subjects and all actions
         if subjects is None:
@@ -75,6 +81,10 @@ class CHICODataset(Dataset):
         
         if self.normalize:
             self._process_dataset()
+        
+        # Apply data augmentation to Collision class (after normalization)
+        if self.augment_collision and self.mode == 'single_frame':
+            self._augment_collision_samples()
         
         print(f"Dataset loaded: {len(self.sequences)} samples (Mode: {self.mode})")
         
@@ -156,6 +166,84 @@ class CHICODataset(Dataset):
     # Get dataset length, useful for DataLoader
     def __len__(self) -> int:
         return len(self.sequences)
+    
+    def _augment_collision_samples(self):
+        """
+        Data augmentation per la classe Collision (risk=2).
+        Applica trasformazioni per aumentare i campioni della classe minoritaria.
+        """
+        print("Applying data augmentation to Collision class...")
+        
+        # Trova tutti i campioni Collision
+        collision_samples = [s for s in self.sequences if s['risk'] == 2]
+        original_count = len(collision_samples)
+        
+        if original_count == 0:
+            print("Warning: No Collision samples found for augmentation")
+            return
+        
+        augmented_samples = []
+        
+        for sample in collision_samples:
+            pose = sample['input'].copy()  # (24, 3) normalizzato
+            
+            for _ in range(self.augment_factor):
+                aug_pose = self._apply_augmentation(pose.copy())
+                augmented_samples.append({
+                    'input': aug_pose,
+                    'risk': 2  # Collision
+                })
+        
+        # Aggiungi i campioni augmentati al dataset
+        self.sequences.extend(augmented_samples)
+        print(f"Collision augmentation: {original_count} -> {original_count + len(augmented_samples)} samples (+{len(augmented_samples)})")
+    
+    def _apply_augmentation(self, pose: np.ndarray) -> np.ndarray:
+        """
+        Applica trasformazioni random a una posa 3D.
+        Args:
+            pose: (24, 3) array di joint positions
+        Returns:
+            Posa augmentata (24, 3)
+        """
+        # Scegli casualmente quali augmentation applicare
+        aug_type = np.random.randint(0, 4)
+        
+        if aug_type == 0:
+            # 1. Gaussian Noise
+            noise = np.random.normal(0, 0.02, pose.shape).astype(np.float32)
+            pose = pose + noise
+            
+        elif aug_type == 1:
+            # 2. Random Scaling (95% - 105%)
+            scale = np.random.uniform(0.95, 1.05)
+            pose = pose * scale
+            
+        elif aug_type == 2:
+            # 3. Rotation around Y-axis (vertical)
+            angle = np.random.uniform(-15, 15) * np.pi / 180  # +/- 15 gradi
+            cos_a, sin_a = np.cos(angle), np.sin(angle)
+            rotation_matrix = np.array([
+                [cos_a, 0, sin_a],
+                [0, 1, 0],
+                [-sin_a, 0, cos_a]
+            ], dtype=np.float32)
+            pose = pose @ rotation_matrix.T
+            
+        else:
+            # 4. Combination: Noise + Scaling + Small Rotation
+            noise = np.random.normal(0, 0.01, pose.shape).astype(np.float32)
+            scale = np.random.uniform(0.98, 1.02)
+            angle = np.random.uniform(-5, 5) * np.pi / 180
+            cos_a, sin_a = np.cos(angle), np.sin(angle)
+            rotation_matrix = np.array([
+                [cos_a, 0, sin_a],
+                [0, 1, 0],
+                [-sin_a, 0, cos_a]
+            ], dtype=np.float32)
+            pose = (pose + noise) * scale @ rotation_matrix.T
+        
+        return pose
     
     def _process_dataset(self):
         """
@@ -242,9 +330,17 @@ def create_pkl_dataloaders(dataset_path: str,
                        output_frames: int = 25,
                        batch_size: int = 32,
                        num_workers: int = 4,
-                       mode: str = 'sequence') -> Tuple[DataLoader, DataLoader, DataLoader, Tuple[np.ndarray, np.ndarray]]:
+                       mode: str = 'sequence',
+                       use_weighted_sampler: bool = False,
+                       augment_collision: bool = False,
+                       augment_factor: int = 5) -> Tuple[DataLoader, DataLoader, DataLoader, Tuple[np.ndarray, np.ndarray]]:
     """
     Create dataloaders for train, validation and test
+    
+    Args:
+        use_weighted_sampler: if True, use WeightedRandomSampler for balanced training
+        augment_collision: if True, apply data augmentation to Collision class (training only)
+        augment_factor: number of augmented copies for each Collision sample
     """
     
     # 1. Create training dataset first (stats will be computed internally)
@@ -258,7 +354,9 @@ def create_pkl_dataloaders(dataset_path: str,
         use_crash=True,
         normalize=True,
         stats=None,
-        mode=mode
+        mode=mode,
+        augment_collision=augment_collision,  # Data augmentation solo per training
+        augment_factor=augment_factor
     )
     
     # 2. Get calculated stats
@@ -293,10 +391,38 @@ def create_pkl_dataloaders(dataset_path: str,
     # Check if CUDA is available for pin_memory
     pin_memory = torch.cuda.is_available()
     
+    # Create WeightedRandomSampler for balanced training if requested
+    sampler = None
+    shuffle_train = True
+    
+    if use_weighted_sampler and mode == 'single_frame':
+        print("Creating WeightedRandomSampler for balanced training...")
+        # Get all labels from training set
+        labels = np.array([seq['risk'] for seq in train_dataset.sequences])
+        
+        # Count samples per class
+        class_counts = np.bincount(labels)
+        print(f"Class distribution: {dict(enumerate(class_counts))}")
+        
+        # Compute weight for each sample (inverse of class frequency)
+        class_weights = 1.0 / class_counts
+        sample_weights = class_weights[labels]
+        sample_weights = torch.from_numpy(sample_weights).double()
+        
+        # Create sampler
+        sampler = WeightedRandomSampler(
+            weights=sample_weights,
+            num_samples=len(sample_weights),
+            replacement=True
+        )
+        shuffle_train = False  # Cannot use shuffle with sampler
+        print(f"WeightedRandomSampler created with {len(sample_weights)} samples")
+    
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
-        shuffle=True,
+        shuffle=shuffle_train,
+        sampler=sampler,
         num_workers=num_workers,
         pin_memory=pin_memory
     )

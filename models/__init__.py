@@ -1,6 +1,6 @@
 """Models package"""
 
-from .mlp import MLP
-from .lstm import LSTM
-    
-__all__ = ['MLP', 'LSTM']
+from .mlp import RiskMLP
+from .lstm import RiskLSTM
+
+__all__ = ['RiskMLP', 'RiskLSTM']
