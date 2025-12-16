@@ -196,7 +196,7 @@ if __name__ == "__main__":
     parser.add_argument('--epochs', type=int, default=50)
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--lr', type=float, default=1e-3)
-    parser.add_argument('--num_workers', type=int, default=2)
+    parser.add_argument('--num_workers', type=int, default=0)
     parser.add_argument('--threshold', type=float, default=0.90, help="Collision probability threshold")
     args = parser.parse_args()
     
