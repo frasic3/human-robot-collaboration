@@ -197,7 +197,7 @@ if __name__ == "__main__":
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--lr', type=float, default=1e-3)
     parser.add_argument('--num_workers', type=int, default=0, help="Number of DataLoader workers")
-    parser.add_argument('--threshold', type=float, default=0.90, help="Collision probability threshold")
+    parser.add_argument('--threshold', type=float, default=0.95, help="Collision probability threshold")
     args = parser.parse_args()
     
     # Seed fisso per riproducibilità
