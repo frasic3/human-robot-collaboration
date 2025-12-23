@@ -1,5 +1,6 @@
 """
-MLP Training Script for Risk Classification
+MLP Training Script - BALANCED EDITION
+Configurazione: Via di mezzo tra sicurezza estrema e precisione.
 """
 import torch
 import torch.nn as nn
@@ -29,7 +30,10 @@ TRAIN_SUBJECTS = [
 VAL_SUBJECTS = ['S00', 'S04']
 TEST_SUBJECTS = ['S02', 'S03', 'S18', 'S19']
 
-# Risk Configuration 
+# --- CONFIGURAZIONE "VIA DI MEZZO" ---
+# Safe: 1.0 (Base)
+# Near: 3.0 (Più importante, per pulire i falsi positivi su Safe)
+# Collision: 60.0 (Forte, ma non "nucleare" come 100)
 RISK_WEIGHTS = [1.0, 1.0, 100.0]
 CLASS_NAMES = ['Safe', 'Near-Collision', 'Collision']
 
@@ -38,6 +42,7 @@ def train_mlp(args, train_loader, val_loader, run_dir):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
     print(f"Collision threshold: {args.threshold}")
+    print(f"Risk Weights: {RISK_WEIGHTS}")
     
     model = RiskMLP(input_size=72, hidden_sizes=[128, 64], num_classes=3).to(device)
     
@@ -45,7 +50,9 @@ def train_mlp(args, train_loader, val_loader, run_dir):
     criterion = nn.CrossEntropyLoss(weight=weights)
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
     
+    # VARIABILI PER IL SALVATAGGIO "SMART"
     best_val_loss = float('inf')
+    best_collision_recall = 0.0 
     
     # Training history
     train_loss_history = []
@@ -53,7 +60,6 @@ def train_mlp(args, train_loader, val_loader, run_dir):
     train_acc_history = []
     val_acc_history = []
     
-    # Best validation predictions
     best_val_preds = None
     best_val_targets = None
     best_val_probs = None
@@ -110,31 +116,50 @@ def train_mlp(args, train_loader, val_loader, run_dir):
         val_targets_array = np.array(val_targets_list)
         collision_probs = val_probs_array[:, 2]
         
-        # Apply threshold: if P(Collision) >= threshold -> Collision
-        val_preds = np.argmax(val_probs_array[:, :2], axis=1)  # argmax tra Safe e Near-Collision
-        val_preds[collision_probs >= args.threshold] = 2       # Se P(Collision) >= threshold -> Collision
+        # Apply threshold logic
+        val_preds = np.argmax(val_probs_array[:, :2], axis=1)
+        val_preds[collision_probs >= args.threshold] = 2
         
         val_correct = np.sum(val_preds == val_targets_array)
         val_total = len(val_targets_array)
-                
         avg_val_loss = val_loss / len(val_loader)
         val_acc = val_correct / val_total if val_total > 0 else 0
+
+        # --- CALCOLO RECALL SICUREZZA ---
+        collision_indices = (val_targets_array == 2)
+        if np.sum(collision_indices) > 0:
+            current_collision_recall = np.sum(val_preds[collision_indices] == 2) / np.sum(collision_indices)
+        else:
+            current_collision_recall = 0.0
         
-        print(f"Epoch {epoch+1}: Train Loss: {avg_train_loss:.4f}, Acc: {train_acc:.4f} | Val Loss: {avg_val_loss:.4f}, Acc: {val_acc:.4f}")
+        print(f"Epoch {epoch+1}: Val Loss: {avg_val_loss:.4f} | Collision Recall: {current_collision_recall:.4f}")
         
         train_loss_history.append(avg_train_loss)
         val_loss_history.append(avg_val_loss)
         train_acc_history.append(train_acc)
         val_acc_history.append(val_acc)
         
-        # Save Best
-        if avg_val_loss < best_val_loss:
+        # --- LOGICA DI SALVATAGGIO INTELLIGENTE ---
+        save_model = False
+        
+        # 1. Se la Recall migliora, salva SEMPRE (Priorità Sicurezza)
+        if current_collision_recall > best_collision_recall:
+            save_model = True
+            print(f">>> SAFETY UPGRADE! Recall: {current_collision_recall:.2f}")
+            
+        # 2. Se la Recall è uguale (es. 100%), salva quello con la Loss minore (Priorità Precisione)
+        elif current_collision_recall == best_collision_recall:
+            if avg_val_loss < best_val_loss:
+                save_model = True
+                print(f">>> EQUAL SAFETY ({current_collision_recall:.2f}), BETTER LOSS. Saving.")
+        
+        if save_model:
+            best_collision_recall = current_collision_recall
             best_val_loss = avg_val_loss
             best_val_preds = val_preds.copy()
             best_val_targets = val_targets_array.copy()
             best_val_probs = val_probs_array.copy()
             torch.save(model.state_dict(), os.path.join(run_dir, 'mlp_best.pth'))
-            print(">>> Saved best model.")
     
     # Save visualizations
     save_training_curves(train_loss_history, val_loss_history, train_acc_history, val_acc_history, run_dir)
@@ -178,9 +203,8 @@ def test_mlp(args, test_loader, run_dir):
     all_probs = np.array(all_probs)
     collision_probs = all_probs[:, 2]
     
-    # Apply threshold: if P(Collision) >= threshold -> Collision
-    all_preds = np.argmax(all_probs[:, :2], axis=1)  # argmax tra Safe e Near-Collision
-    all_preds[collision_probs >= args.threshold] = 2  # Se P(Collision) >= threshold -> Collision
+    all_preds = np.argmax(all_probs[:, :2], axis=1)
+    all_preds[collision_probs >= args.threshold] = 2
     
     # Save visualizations
     save_confusion_matrix(all_targets, all_preds, CLASS_NAMES, run_dir, 'confusion_matrix_test.png')
@@ -196,16 +220,16 @@ if __name__ == "__main__":
     parser.add_argument('--epochs', type=int, default=50)
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--lr', type=float, default=1e-3)
-    parser.add_argument('--num_workers', type=int, default=0, help="Number of DataLoader workers")
-    parser.add_argument('--threshold', type=float, default=0.95, help="Collision probability threshold")
+    parser.add_argument('--num_workers', type=int, default=0)
+    # Soglia leggermente più bassa per compensare il peso ridotto
+    parser.add_argument('--threshold', type=float, default=0.97, help="Collision probability threshold")
     args = parser.parse_args()
     
-    # Seed fisso per riproducibilità
+    # Seed per riproducibilità
     torch.manual_seed(42)
     np.random.seed(42)
     random.seed(42)
     
-    # Setup run directory
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     run_dir = os.path.join('runs', f'mlp_{timestamp}')
     os.makedirs(run_dir, exist_ok=True)
