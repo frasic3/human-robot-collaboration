@@ -10,6 +10,7 @@ class RiskMLP(nn.Module):
         
         for h_dim in hidden_sizes:
             layers.append(nn.Linear(in_dim, h_dim))
+            layers.append(nn.BatchNorm1d(h_dim))
             layers.append(nn.ReLU())
             layers.append(nn.Dropout(0.5))
             in_dim = h_dim

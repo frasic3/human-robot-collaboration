@@ -1,7 +1,3 @@
-"""
-MLP Training Script - BALANCED EDITION
-Configurazione: Via di mezzo tra sicurezza estrema e precisione.
-"""
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -21,6 +17,7 @@ from utils.visualization import (
     save_pr_curves,
     save_metrics_report
 )
+from utils.skeleton_viz import visualize_missed_collision
 
 # Dataset Split Configuration
 TRAIN_SUBJECTS = [
@@ -30,11 +27,7 @@ TRAIN_SUBJECTS = [
 VAL_SUBJECTS = ['S00', 'S04']
 TEST_SUBJECTS = ['S02', 'S03', 'S18', 'S19']
 
-# --- CONFIGURAZIONE "VIA DI MEZZO" ---
-# Safe: 1.0 (Base)
-# Near: 3.0 (Più importante, per pulire i falsi positivi su Safe)
-# Collision: 60.0 (Forte, ma non "nucleare" come 100)
-RISK_WEIGHTS = [1.0, 1.0, 100.0]
+RISK_WEIGHTS = [1, 4, 10] 
 CLASS_NAMES = ['Safe', 'Near-Collision', 'Collision']
 
 
@@ -48,11 +41,12 @@ def train_mlp(args, train_loader, val_loader, run_dir):
     
     weights = torch.tensor(RISK_WEIGHTS).float().to(device)
     criterion = nn.CrossEntropyLoss(weight=weights)
-    optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
+    optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-3)  # Aumentato per regolarizzazione
     
-    # VARIABILI PER IL SALVATAGGIO "SMART"
     best_val_loss = float('inf')
-    best_collision_recall = 0.0 
+    best_collision_recall = 0.0
+    best_missed_warnings = float('inf')
+    best_epoch = 0
     
     # Training history
     train_loss_history = []
@@ -98,6 +92,7 @@ def train_mlp(args, train_loader, val_loader, run_dir):
         val_loss = 0.0
         val_targets_list = []
         val_probs_list = []
+        val_inputs_list = []
         
         with torch.no_grad():
             for inputs, targets in val_loader:
@@ -111,9 +106,11 @@ def train_mlp(args, train_loader, val_loader, run_dir):
                 
                 val_targets_list.extend(targets.cpu().numpy())
                 val_probs_list.extend(probs.cpu().numpy())
+                val_inputs_list.extend(inputs.cpu().numpy())
         
         val_probs_array = np.array(val_probs_list)
         val_targets_array = np.array(val_targets_list)
+        val_inputs_array = np.array(val_inputs_list)
         collision_probs = val_probs_array[:, 2]
         
         # Apply threshold logic
@@ -125,49 +122,115 @@ def train_mlp(args, train_loader, val_loader, run_dir):
         avg_val_loss = val_loss / len(val_loader)
         val_acc = val_correct / val_total if val_total > 0 else 0
 
-        # --- CALCOLO RECALL SICUREZZA ---
+       # calculate collision recall 
         collision_indices = (val_targets_array == 2)
         if np.sum(collision_indices) > 0:
             current_collision_recall = np.sum(val_preds[collision_indices] == 2) / np.sum(collision_indices)
+            
+            # identify missed collision samples
+            missed_collisions = collision_indices & (val_preds != 2)
+            if np.sum(missed_collisions) > 0:
+                missed_dir = os.path.join(run_dir, 'missed_collisions')
+                os.makedirs(missed_dir, exist_ok=True)
+                
+                missed_indices = np.where(missed_collisions)[0]
+                print(f"\n!!! MISSED {len(missed_indices)} COLLISION(S) at Epoch {epoch+1}:")
+                
+                for idx in missed_indices:
+                    print(f"  Sample {idx}: Pred={CLASS_NAMES[val_preds[idx]]}, P(Coll)={collision_probs[idx]:.4f}")
+                    
+                    viz_path = os.path.join(missed_dir, f'epoch{epoch+1}_sample_{idx}.png')
+                    visualize_missed_collision(
+                        skeleton_data=val_inputs_array[idx],
+                        probs=val_probs_array[idx],
+                        true_label=val_targets_array[idx],
+                        pred_label=val_preds[idx],
+                        class_names=CLASS_NAMES,
+                        sample_idx=idx,
+                        threshold=args.threshold,
+                        save_path=viz_path
+                    )
+                    
         else:
             current_collision_recall = 0.0
         
-        print(f"Epoch {epoch+1}: Val Loss: {avg_val_loss:.4f} | Collision Recall: {current_collision_recall:.4f}")
+        print(f"Epoch {epoch+1}: Val Loss: {avg_val_loss:.4f}")
+        
+        # 2. Errori Near->Safe 
+        # True Label = 1 (Near), Predicted = 0 (Safe)
+        current_missed_warnings = np.sum((val_targets_array == 1) & (val_preds == 0))
+        
+        print(f"Epoch {epoch+1}: Loss: {avg_val_loss:.4f}")
         
         train_loss_history.append(avg_train_loss)
         val_loss_history.append(avg_val_loss)
         train_acc_history.append(train_acc)
         val_acc_history.append(val_acc)
         
-        # --- LOGICA DI SALVATAGGIO INTELLIGENTE ---
         save_model = False
         
-        # 1. Se la Recall migliora, salva SEMPRE (Priorità Sicurezza)
+        # LIVELLO 1: Massimizzare la Sicurezza (Collision Recall)
         if current_collision_recall > best_collision_recall:
             save_model = True
-            print(f">>> SAFETY UPGRADE! Recall: {current_collision_recall:.2f}")
+            print(f"Improved safety: Recall: {current_collision_recall:.2f}")
             
-        # 2. Se la Recall è uguale (es. 100%), salva quello con la Loss minore (Priorità Precisione)
+        # LIVELLO 2: A parità di sicurezza, Minimizzare i Mancati Preavvisi (Near->Safe)
         elif current_collision_recall == best_collision_recall:
-            if avg_val_loss < best_val_loss:
+            if current_missed_warnings < best_missed_warnings:
                 save_model = True
-                print(f">>> EQUAL SAFETY ({current_collision_recall:.2f}), BETTER LOSS. Saving.")
-        
+                print(f"Better warnings: Missed Warnings dropped to {current_missed_warnings}")
+            
+            # LIVELLO 3: A parità di recall E missed warnings, Minimizzare la Loss (Precisione generale)
+            elif current_missed_warnings == best_missed_warnings:
+                if avg_val_loss < best_val_loss:
+                    save_model = True
+                    print(f"Optimized loss: Val Loss dropped to {avg_val_loss:.4f}")
+    
         if save_model:
             best_collision_recall = current_collision_recall
+            best_missed_warnings = current_missed_warnings
             best_val_loss = avg_val_loss
             best_val_preds = val_preds.copy()
             best_val_targets = val_targets_array.copy()
             best_val_probs = val_probs_array.copy()
             torch.save(model.state_dict(), os.path.join(run_dir, 'mlp_best.pth'))
+            best_epoch = epoch
     
     # Save visualizations
     save_training_curves(train_loss_history, val_loss_history, train_acc_history, val_acc_history, run_dir)
     
+    # Prepare info text
+    info_val = f"Val Subjects: {VAL_SUBJECTS} | Threshold: {args.threshold} | Epochs: {args.epochs}"
+    info_train = f"Train Subjects: {TRAIN_SUBJECTS[:3]}+{len(TRAIN_SUBJECTS)-3} more | Threshold: {args.threshold}"
+    
     if best_val_preds is not None:
-        save_confusion_matrix(best_val_targets, best_val_preds, CLASS_NAMES, run_dir, 'confusion_matrix_val.png')
-        save_pr_curves(best_val_targets, best_val_probs, CLASS_NAMES, run_dir, 'pr_curves_val.png')
-        save_metrics_report(best_val_targets, best_val_preds, CLASS_NAMES, run_dir, 'metrics_report_val.png')
+        save_confusion_matrix(best_val_targets, best_val_preds, CLASS_NAMES, run_dir, 'confusion_matrix_val.png', info_text=info_val)
+        save_pr_curves(best_val_targets, best_val_probs, CLASS_NAMES, run_dir, 'pr_curves_val.png', info_text=info_val)
+        save_metrics_report(best_val_targets, best_val_preds, CLASS_NAMES, run_dir, 'metrics_report_val.png', info_text=info_val)
+    
+    # Salva anche le metriche sul training set finale
+    print("\nEvaluating on training set...")
+    model.eval()
+    train_targets_list = []
+    train_probs_list = []
+    
+    with torch.no_grad():
+        for inputs, targets in train_loader:
+            inputs = inputs.to(device)
+            outputs = model(inputs)
+            probs = F.softmax(outputs, dim=1)
+            train_targets_list.extend(targets.cpu().numpy())
+            train_probs_list.extend(probs.cpu().numpy())
+    
+    train_targets_array = np.array(train_targets_list)
+    train_probs_array = np.array(train_probs_list)
+    collision_probs_train = train_probs_array[:, 2]
+    train_preds_final = np.argmax(train_probs_array[:, :2], axis=1)
+    train_preds_final[collision_probs_train >= args.threshold] = 2
+    
+    save_confusion_matrix(train_targets_array, train_preds_final, CLASS_NAMES, run_dir, 'confusion_matrix_train.png', info_text=info_train)
+    save_pr_curves(train_targets_array, train_probs_array, CLASS_NAMES, run_dir, 'pr_curves_train.png', info_text=info_train)
+    save_metrics_report(train_targets_array, train_preds_final, CLASS_NAMES, run_dir, 'metrics_report_train.png', info_text=info_train)
     
     print("Training complete.")
 
@@ -206,10 +269,13 @@ def test_mlp(args, test_loader, run_dir):
     all_preds = np.argmax(all_probs[:, :2], axis=1)
     all_preds[collision_probs >= args.threshold] = 2
     
+    # Prepare info text
+    info_test = f"Test Subjects: {TEST_SUBJECTS} | Threshold: {args.threshold}"
+    
     # Save visualizations
-    save_confusion_matrix(all_targets, all_preds, CLASS_NAMES, run_dir, 'confusion_matrix_test.png')
-    save_pr_curves(all_targets, all_probs, CLASS_NAMES, run_dir, 'pr_curves_test.png')
-    save_metrics_report(all_targets, all_preds, CLASS_NAMES, run_dir, 'metrics_report_test.png')
+    save_confusion_matrix(all_targets, all_preds, CLASS_NAMES, run_dir, 'confusion_matrix_test.png', info_text=info_test)
+    save_pr_curves(all_targets, all_probs, CLASS_NAMES, run_dir, 'pr_curves_test.png', info_text=info_test)
+    save_metrics_report(all_targets, all_preds, CLASS_NAMES, run_dir, 'metrics_report_test.png', info_text=info_test)
     
     print("Test complete.")
 
@@ -221,8 +287,7 @@ if __name__ == "__main__":
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--lr', type=float, default=1e-3)
     parser.add_argument('--num_workers', type=int, default=0)
-    # Soglia leggermente più bassa per compensare il peso ridotto
-    parser.add_argument('--threshold', type=float, default=0.97, help="Collision probability threshold")
+    parser.add_argument('--threshold', type=float, default=0.1, help="Collision probability threshold")
     args = parser.parse_args()
     
     # Seed per riproducibilità
@@ -234,6 +299,17 @@ if __name__ == "__main__":
     run_dir = os.path.join('runs', f'mlp_{timestamp}')
     os.makedirs(run_dir, exist_ok=True)
     print(f"Run directory: {run_dir}")
+
+    # Save configuration
+    with open(os.path.join(run_dir, 'config.txt'), 'w') as f:
+        f.write("=== CONFIGURATION ===\n")
+        for arg, value in vars(args).items():
+            f.write(f"{arg}: {value}\n")
+        f.write("\n=== HYPERPARAMETERS ===\n")
+        f.write(f"RISK_WEIGHTS: {RISK_WEIGHTS}\n")
+        f.write(f"TRAIN_SUBJECTS: {TRAIN_SUBJECTS}\n")
+        f.write(f"VAL_SUBJECTS: {VAL_SUBJECTS}\n")
+        f.write(f"TEST_SUBJECTS: {TEST_SUBJECTS}\n")
 
     train_loader, val_loader, test_loader, stats = create_pkl_dataloaders(
         dataset_path=args.data_path,

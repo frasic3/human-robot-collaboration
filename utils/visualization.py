@@ -44,7 +44,7 @@ def save_training_curves(train_losses, val_losses, train_accs, val_accs, save_di
     plt.close()
 
 
-def save_confusion_matrix(y_true, y_pred, class_names, save_dir, filename='confusion_matrix.png'):
+def save_confusion_matrix(y_true, y_pred, class_names, save_dir, filename='confusion_matrix.png', info_text=None):
     """Salva la matrice di confusione come heatmap."""
     cm = confusion_matrix(y_true, y_pred)
     
@@ -52,15 +52,20 @@ def save_confusion_matrix(y_true, y_pred, class_names, save_dir, filename='confu
     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
                 xticklabels=class_names, yticklabels=class_names,
                 annot_kws={"size": 14})
-    plt.title('Confusion Matrix', fontsize=16)
+    
+    title = 'Confusion Matrix'
+    if info_text:
+        title += f'\n{info_text}'
+    plt.title(title, fontsize=14)
+    
     plt.ylabel('True Label', fontsize=12)
     plt.xlabel('Predicted Label', fontsize=12)
     plt.tight_layout()
-    plt.savefig(os.path.join(save_dir, filename), dpi=150)
+    plt.savefig(os.path.join(save_dir, filename), dpi=150, bbox_inches='tight')
     plt.close()
 
 
-def save_pr_curves(y_true, y_probs, class_names, save_dir, filename='pr_curves.png'):
+def save_pr_curves(y_true, y_probs, class_names, save_dir, filename='pr_curves.png', info_text=None):
     """Salva le curve Precision-Recall per ogni classe."""
     n_classes = len(class_names)
     y_true_bin = label_binarize(y_true, classes=range(n_classes))
@@ -77,15 +82,20 @@ def save_pr_curves(y_true, y_probs, class_names, save_dir, filename='pr_curves.p
     
     plt.xlabel('Recall', fontsize=12)
     plt.ylabel('Precision', fontsize=12)
-    plt.title('Precision-Recall Curves', fontsize=16)
+    
+    title = 'Precision-Recall Curves'
+    if info_text:
+        title += f'\n{info_text}'
+    plt.title(title, fontsize=14)
+    
     plt.legend(loc="best", fontsize=11)
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
-    plt.savefig(os.path.join(save_dir, filename), dpi=150)
+    plt.savefig(os.path.join(save_dir, filename), dpi=150, bbox_inches='tight')
     plt.close()
 
 
-def save_metrics_report(y_true, y_pred, class_names, save_dir, filename='metrics_report.png'):
+def save_metrics_report(y_true, y_pred, class_names, save_dir, filename='metrics_report.png', info_text=None):
     """Salva il report delle metriche come immagine PNG."""
     report = classification_report(y_true, y_pred, target_names=class_names, digits=4, output_dict=True)
     
@@ -129,7 +139,10 @@ def save_metrics_report(y_true, y_pred, class_names, save_dir, filename='metrics
             for j in range(-1, len(metrics)):
                 table[(i+1, j)].set_facecolor(colors[i % len(colors)])
     
-    plt.title('Classification Report', fontsize=16, fontweight='bold', pad=20)
+    title = 'Classification Report'
+    if info_text:
+        title += f'\n{info_text}'
+    plt.title(title, fontsize=14, fontweight='bold', pad=20)
     plt.tight_layout()
     plt.savefig(os.path.join(save_dir, filename), dpi=150, bbox_inches='tight')
     plt.close()

@@ -37,7 +37,7 @@ class CHICODataset(Dataset):
                  stats: Tuple[np.ndarray, np.ndarray] = None,
                  mode: str = 'sequence',  # 'sequence' or 'single_frame'
                  augment_collision: bool = False,  # Data augmentation per classe Collision
-                 augment_factor: int = 50):  # Numero di copie augmentate per ogni sample Collision
+                 augment_factor: int = 200):  # Numero di copie augmentate per ogni sample Collision
         """
         Args:
             dataset_path: path to the dataset folder
@@ -207,7 +207,7 @@ class CHICODataset(Dataset):
             Posa augmentata (24, 3)
         """
         # Scegli casualmente quali augmentation applicare
-        aug_type = np.random.randint(0, 4)
+        aug_type = np.random.randint(0, 5)
         
         if aug_type == 0:
             # 1. Gaussian Noise
@@ -218,7 +218,7 @@ class CHICODataset(Dataset):
             # 2. Random Scaling (95% - 105%)
             scale = np.random.uniform(0.95, 1.05)
             pose = pose * scale
-            
+        
         elif aug_type == 2:
             # 3. Rotation around Y-axis (vertical)
             angle = np.random.uniform(-15, 15) * np.pi / 180  # +/- 15 gradi
@@ -229,7 +229,13 @@ class CHICODataset(Dataset):
                 [-sin_a, 0, cos_a]
             ], dtype=np.float32)
             pose = pose @ rotation_matrix.T
-            
+        
+        elif aug_type == 4:
+            # Joint Dropout (Simulazione errore sensore)
+            num_dropout = np.random.randint(1, 3) 
+            idxs = np.random.choice(pose.shape[0], num_dropout, replace=False)
+            pose[idxs] = 0.0
+
         else:
             # 4. Combination: Noise + Scaling + Small Rotation
             noise = np.random.normal(0, 0.01, pose.shape).astype(np.float32)
@@ -329,7 +335,7 @@ def create_pkl_dataloaders(dataset_path: str,
                        input_frames: int = 10,
                        output_frames: int = 25,
                        batch_size: int = 32,
-                       num_workers: int = 4,
+                       num_workers: int = 0,
                        mode: str = 'sequence',
                        use_weighted_sampler: bool = False,
                        augment_collision: bool = False,
