@@ -326,8 +326,48 @@ class CHICODataset(Dataset):
             
         return x, y
 
+# Helper functions for WeightedRandomSampler
+def _get_sampling_labels(dataset: CHICODataset) -> np.ndarray:
+    """
+    Estrae un array di label (una per sample) usabile per il WeightedRandomSampler.
+    
+    - single_frame: usa direttamente 'risk'
+    - sequence: usa max(output_risk) — se almeno un frame futuro è Collision,
+      l'intero sample è considerato Collision (safety-first)
+    """
+    if dataset.mode == 'single_frame':
+        return np.array([s['risk'] for s in dataset.sequences], dtype=np.int64)
+    return np.array([int(np.max(s['output_risk'])) for s in dataset.sequences], dtype=np.int64)
 
 
+def _build_weighted_sampler(labels: np.ndarray, num_classes: int = 3) -> WeightedRandomSampler:
+    """
+    Crea un WeightedRandomSampler a partire da label intere.
+    
+    Peso di ogni classe = 1 / (numero di sample in quella classe)
+    → classi rare vengono pescate più spesso
+    """
+    # {0:2000, 1:500, 2:100} 
+    class_counts = np.bincount(labels, minlength=num_classes)
+    print(f"  Class distribution: {dict(enumerate(class_counts))}")
+    
+    # Evita divisione per zero se una classe è assente
+    class_weights = np.zeros(num_classes, dtype=np.float64)
+    for c in range(num_classes):
+        if class_counts[c] > 0:
+            class_weights[c] = 1.0 / class_counts[c]
+    
+    # Assegna a ogni sample il peso della sua classe
+    sample_weights = class_weights[labels]
+    sample_weights_tensor = torch.from_numpy(sample_weights).double()
+    
+    return WeightedRandomSampler(
+        weights=sample_weights_tensor,
+        num_samples=len(sample_weights_tensor),
+        replacement=True
+    )
+
+# main function to create DataLoaders
 def create_pkl_dataloaders(dataset_path: str,
                        train_subjects: List[str],
                        val_subjects: List[str],
@@ -356,12 +396,12 @@ def create_pkl_dataloaders(dataset_path: str,
         subjects=train_subjects,
         input_frames=input_frames,
         output_frames=output_frames,
-        stride=1 if mode == 'sequence' else 10, # Higher stride for single frame to avoid too much data
+        stride=1 if mode == 'sequence' else 10,
         use_crash=True,
         normalize=True,
         stats=None,
         mode=mode,
-        augment_collision=augment_collision,  # Data augmentation solo per training
+        augment_collision=augment_collision,
         augment_factor=augment_factor
     )
     
@@ -403,26 +443,10 @@ def create_pkl_dataloaders(dataset_path: str,
     
     if use_weighted_sampler and mode == 'single_frame':
         print("Creating WeightedRandomSampler for balanced training...")
-        # Get all labels from training set
-        labels = np.array([seq['risk'] for seq in train_dataset.sequences])
-        
-        # Count samples per class
-        class_counts = np.bincount(labels)
-        print(f"Class distribution: {dict(enumerate(class_counts))}")
-        
-        # Compute weight for each sample (inverse of class frequency)
-        class_weights = 1.0 / class_counts
-        sample_weights = class_weights[labels]
-        sample_weights = torch.from_numpy(sample_weights).double()
-        
-        # Create sampler
-        sampler = WeightedRandomSampler(
-            weights=sample_weights,
-            num_samples=len(sample_weights),
-            replacement=True
-        )
-        shuffle_train = False  # Cannot use shuffle with sampler
-        print(f"WeightedRandomSampler created with {len(sample_weights)} samples")
+        labels = _get_sampling_labels(train_dataset)
+        sampler = _build_weighted_sampler(labels)
+        shuffle_train = False
+        print(f"WeightedRandomSampler created with {len(labels)} samples")
     
     train_loader = DataLoader(
         train_dataset,

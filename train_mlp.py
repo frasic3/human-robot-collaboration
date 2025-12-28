@@ -134,11 +134,9 @@ def train_mlp(args, train_loader, val_loader, run_dir):
                 os.makedirs(missed_dir, exist_ok=True)
                 
                 missed_indices = np.where(missed_collisions)[0]
-                print(f"\n!!! MISSED {len(missed_indices)} COLLISION(S) at Epoch {epoch+1}:")
+                print(f"Missed {len(missed_indices)} collision(s) at Epoch {epoch+1}:")
                 
-                for idx in missed_indices:
-                    print(f"  Sample {idx}: Pred={CLASS_NAMES[val_preds[idx]]}, P(Coll)={collision_probs[idx]:.4f}")
-                    
+                for idx in missed_indices:                    
                     viz_path = os.path.join(missed_dir, f'epoch{epoch+1}_sample_{idx}.png')
                     visualize_missed_collision(
                         skeleton_data=val_inputs_array[idx],
@@ -247,7 +245,7 @@ def test_mlp(args, test_loader, run_dir):
         print(f"ERROR: Model not found at {checkpoint_path}")
         return
     
-    model.load_state_dict(torch.load(checkpoint_path, map_location=device))
+    model.load_state_dict(torch.load(checkpoint_path, map_location=device, weights_only=True))
     model.eval()
     
     all_targets = []
@@ -286,7 +284,6 @@ if __name__ == "__main__":
     parser.add_argument('--epochs', type=int, default=50)
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--lr', type=float, default=1e-3)
-    parser.add_argument('--num_workers', type=int, default=0)
     parser.add_argument('--threshold', type=float, default=0.1, help="Collision probability threshold")
     args = parser.parse_args()
     
@@ -300,17 +297,6 @@ if __name__ == "__main__":
     os.makedirs(run_dir, exist_ok=True)
     print(f"Run directory: {run_dir}")
 
-    # Save configuration
-    with open(os.path.join(run_dir, 'config.txt'), 'w') as f:
-        f.write("=== CONFIGURATION ===\n")
-        for arg, value in vars(args).items():
-            f.write(f"{arg}: {value}\n")
-        f.write("\n=== HYPERPARAMETERS ===\n")
-        f.write(f"RISK_WEIGHTS: {RISK_WEIGHTS}\n")
-        f.write(f"TRAIN_SUBJECTS: {TRAIN_SUBJECTS}\n")
-        f.write(f"VAL_SUBJECTS: {VAL_SUBJECTS}\n")
-        f.write(f"TEST_SUBJECTS: {TEST_SUBJECTS}\n")
-
     train_loader, val_loader, test_loader, stats = create_pkl_dataloaders(
         dataset_path=args.data_path,
         train_subjects=TRAIN_SUBJECTS,
@@ -319,7 +305,7 @@ if __name__ == "__main__":
         input_frames=1,
         output_frames=0,
         batch_size=args.batch_size,
-        num_workers=args.num_workers,
+        num_workers=0,
         mode='single_frame',
         use_weighted_sampler=True,
         augment_collision=True,
