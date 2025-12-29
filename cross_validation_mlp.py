@@ -112,7 +112,7 @@ def run_cross_validation(args):
     
     # Crea cartella principale per CV
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    cv_dir = os.path.join('runs', f'cv_{timestamp}')
+    cv_dir = os.path.join('runs', f'cv_mlp_{timestamp}')
     os.makedirs(cv_dir, exist_ok=True)
     print(f"Cross-Validation directory: {cv_dir}")
     
