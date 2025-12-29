@@ -156,10 +156,7 @@ def train_mlp(args, train_loader, val_loader, run_dir):
         
         # 2. Errori Near->Safe 
         # True Label = 1 (Near), Predicted = 0 (Safe)
-        current_missed_warnings = np.sum((val_targets_array == 1) & (val_preds == 0))
-        
-        print(f"Epoch {epoch+1}: Loss: {avg_val_loss:.4f}")
-        
+        current_missed_warnings = np.sum((val_targets_array == 1) & (val_preds == 0))        
         train_loss_history.append(avg_train_loss)
         val_loss_history.append(avg_val_loss)
         train_acc_history.append(train_acc)
@@ -281,7 +278,7 @@ def test_mlp(args, test_loader, run_dir):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_path', type=str, required=True, help="Path to dataset")
-    parser.add_argument('--epochs', type=int, default=50)
+    parser.add_argument('--epochs', type=int, default=1)
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--lr', type=float, default=1e-3)
     parser.add_argument('--threshold', type=float, default=0.1, help="Collision probability threshold")
