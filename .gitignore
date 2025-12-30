@@ -16,8 +16,4 @@ env/
 # Project specific
 checkpoints/
 runs/
-inspection_results/
 datasets/
-
-# CoppeliaSim
-coppelia_sim/
