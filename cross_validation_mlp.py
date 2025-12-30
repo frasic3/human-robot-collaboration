@@ -200,7 +200,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Cross-Validation for MLP Risk Classification")
     parser.add_argument('--data_path', type=str, required=True, help="Path to dataset")
     parser.add_argument('--n_folds', type=int, default=5, help="Number of CV folds")
-    parser.add_argument('--epochs', type=int, default=50, help="Epochs per fold")
+    parser.add_argument('--epochs', type=int, default=10, help="Epochs per fold")
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--lr', type=float, default=1e-3)
     parser.add_argument('--num_workers', type=int, default=0)

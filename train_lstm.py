@@ -245,6 +245,8 @@ def train_lstm(args, model, train_loader, val_loader, run_dir, device):
     best_val_targets = None
     best_val_probs = None
     epochs_no_improve = 0
+    # Assicurati che la cartella run_dir esista
+    os.makedirs(run_dir, exist_ok=True)
     try:
         for epoch in range(args.epochs):
 
@@ -436,7 +438,6 @@ if __name__ == "__main__":
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     run_id = args.run_name.strip() if isinstance(args.run_name, str) and args.run_name.strip() else f'lstm_{timestamp}'
     run_dir = os.path.join('runs', run_id)
-    os.makedirs(os.path.join(run_dir, 'checkpoints'), exist_ok=True)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
     # Create dataloaders

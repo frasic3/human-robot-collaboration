@@ -302,7 +302,7 @@ def test_mlp(args, test_loader, run_dir):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_path', type=str, required=True, help="Path to dataset")
-    parser.add_argument('--epochs', type=int, default=1)
+    parser.add_argument('--epochs', type=int, default=10)
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--lr', type=float, default=1e-3)
     parser.add_argument('--threshold', type=float, default=0.1, help="Collision probability threshold")
