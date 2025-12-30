@@ -31,6 +31,13 @@ RISK_WEIGHTS = [1, 4, 10]
 CLASS_NAMES = ['Safe', 'Near-Collision', 'Collision']
 
 
+def _write_tuning_metrics(run_dir: str, payload: dict) -> None:
+    import json
+    path = os.path.join(run_dir, 'tuning_metrics.json')
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump(payload, f, indent=2)
+
+
 def train_mlp(args, train_loader, val_loader, run_dir):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
@@ -190,6 +197,23 @@ def train_mlp(args, train_loader, val_loader, run_dir):
             best_val_probs = val_probs_array.copy()
             torch.save(model.state_dict(), os.path.join(run_dir, 'mlp_best.pth'))
             best_epoch = epoch
+
+            _write_tuning_metrics(
+                run_dir,
+                {
+                    'best_epoch': int(best_epoch + 1),
+                    'best_val_loss': float(best_val_loss),
+                    'best_collision_recall': float(best_collision_recall),
+                    'best_missed_warnings': int(best_missed_warnings),
+                    'threshold': float(args.threshold),
+                    'risk_weights': list(RISK_WEIGHTS),
+                    'epochs': int(args.epochs),
+                    'lr': float(args.lr),
+                    'batch_size': int(getattr(args, 'batch_size', 0)),
+                    'train_subjects': list(TRAIN_SUBJECTS),
+                    'val_subjects': list(VAL_SUBJECTS),
+                }
+            )
     
     # Save visualizations
     save_training_curves(train_loss_history, val_loss_history, train_acc_history, val_acc_history, run_dir)

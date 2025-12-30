@@ -8,10 +8,9 @@ Subject-level CV (like cross_validation.py):
 Saves:
 - runs/cv_lstm_<timestamp>/splits.json
 - runs/cv_lstm_<timestamp>/fold_i/metrics.json
-- runs/cv_lstm_<timestamp>/summary.json
 
 Per-fold it also saves the same test artifacts produced by train_lstm.py
-(plots + final_report.txt) for a definitive evaluation.
+(plots) for a definitive evaluation.
 """
 
 import argparse
@@ -70,9 +69,9 @@ def evaluate_loader_basic(args, model, loader, device, prefix=''):
     risk_weights = list(args.risk_weights)
     criterion = lstm_train.TemporalWeightedCrossEntropy(
         class_weights=risk_weights,
-        output_frames=int(args.output_frames),
-        urgent_frames=getattr(args, 'urgent_frames', lstm_train.URGENT_FRAMES),
-        decay_factor=getattr(args, 'decay_factor', lstm_train.DECAY_FACTOR),
+        output_frames=lstm_train.OUTPUT_FRAMES,
+        urgent_frames=lstm_train.URGENT_FRAMES,
+        decay_factor=lstm_train.DECAY_FACTOR,
         device=device,
     )
 
@@ -181,19 +180,7 @@ def run_cv(args) -> None:
             threshold=float(args.threshold),
             risk_weights=list(args.risk_weights),
             augment_factor=int(args.augment_factor),
-            batch_size=int(args.batch_size),
-            input_frames=lstm_train.INPUT_FRAMES,
-            output_frames=lstm_train.OUTPUT_FRAMES,
             eval_frames=int(args.eval_frames),
-            urgent_frames=lstm_train.URGENT_FRAMES,
-            decay_factor=lstm_train.DECAY_FACTOR,
-            sampler_strategy=lstm_train.SAMPLER_STRATEGY,
-            sampler_collision_scale=lstm_train.SAMPLER_COLLISION_SCALE,
-            sampler_collision_power=lstm_train.SAMPLER_COLLISION_POWER,
-            sampler_min_weight=lstm_train.SAMPLER_MIN_WEIGHT,
-            skip_test=True,
-            skip_artifacts=False,
-            stop_on_target=False,
             seed=fold_seed,
         )
 
@@ -219,7 +206,7 @@ def run_cv(args) -> None:
             metrics_test_pack['arrays']['targets'],
             metrics_test_pack['arrays']['preds'],
             metrics_test_pack['arrays']['probs'],
-            int(train_args.output_frames),
+            lstm_train.OUTPUT_FRAMES,
             fold_dir,
             prefix='test_',
         )
@@ -232,7 +219,6 @@ def run_cv(args) -> None:
             'per_class_first_k': metrics_test_pack['per_class_first_k'],
             **eval_pack,
         }
-        lstm_train.save_final_report(train_args, test_results, fold_dir)
 
         fold_record = {
             'fold': fold,
@@ -315,9 +301,6 @@ def run_cv(args) -> None:
             'loss_std': float(np.std(test_loss)),
         },
     }
-
-    with open(os.path.join(cv_dir, 'summary.json'), 'w', encoding='utf-8') as f:
-        json.dump(summary, f, indent=2)
 
     print('\n' + '=' * 70)
     print('CROSS-VALIDATION SUMMARY (TEST)')
