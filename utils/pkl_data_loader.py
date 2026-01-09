@@ -311,7 +311,7 @@ class CHICODataset(Dataset):
             Posa augmentata (24, 3)
         """
         # Scegli casualmente quali augmentation applicare
-        aug_type = np.random.randint(0, 5)
+        aug_type = np.random.randint(0, 4)
         
         if aug_type == 0:
             # 1. Gaussian Noise
@@ -334,7 +334,7 @@ class CHICODataset(Dataset):
             ], dtype=np.float32)
             pose = pose @ rotation_matrix.T
         
-        elif aug_type == 4:
+        elif aug_type == 3:
             # Joint Dropout (Simulazione errore sensore)
             num_dropout = np.random.randint(1, 3) 
             idxs = np.random.choice(pose.shape[0], num_dropout, replace=False)
