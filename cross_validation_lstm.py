@@ -1,4 +1,4 @@
-"""Cross-validation runner for LSTM forecasting.
+"""Monte Carlo Cross-validation runner for LSTM forecasting.
 
 Subject-level CV (like cross_validation.py):
 - Picks a test fold of subjects.

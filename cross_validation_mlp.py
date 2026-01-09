@@ -1,5 +1,5 @@
 """
-Cross-Validation Script - Testa diverse combinazioni Train/Val/Test
+Monte Carlo Cross-Validation Script - Testa diverse combinazioni Train/Val/Test
 """
 import os
 import argparse
