@@ -396,10 +396,21 @@ def save_confusion_matrix_forecasting(y_true, y_pred, class_names, save_dir, fil
     plt.close()
 
 
-def save_metrics_summary(metrics_dict, mat_stats, event_stats, flicker_stats, save_dir, filename='metrics_summary.png'):
+def save_metrics_summary(
+    metrics_dict,
+    mat_stats,
+    event_stats,
+    flicker_stats,
+    save_dir,
+    filename='metrics_summary.png',
+    title: str | None = None,
+    header: str | None = None,
+):
 
     """Salva un riepilogo visivo di tutte le metriche (forecasting)."""
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    if title:
+        fig.suptitle(str(title), fontsize=16, fontweight='bold')
     ax1 = axes[0, 0]
     P = metrics_dict['recall_per_class_per_step'].shape[1]
     timesteps = np.arange(1, P + 1)
@@ -440,7 +451,7 @@ def save_metrics_summary(metrics_dict, mat_stats, event_stats, flicker_stats, sa
     ax4 = axes[1, 1]
     ax4.axis('off')
     summary_text = "=" * 40 + "\n"
-    summary_text += "RIEPILOGO METRICHE FORECASTING\n"
+    summary_text += (str(header) if header else "RIEPILOGO METRICHE FORECASTING") + "\n"
     summary_text += "=" * 40 + "\n\n"
     summary_text += "PER-TIMESTEP:\n"
     summary_text += f"  • Recall Collision @+1:  {collision_recall[0]:.2%}\n"
@@ -459,7 +470,8 @@ def save_metrics_summary(metrics_dict, mat_stats, event_stats, flicker_stats, sa
     ax4.text(0.1, 0.9, summary_text, transform=ax4.transAxes, fontsize=11,
              verticalalignment='top', fontfamily='monospace',
              bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
-    plt.tight_layout()
+    # Leave room for suptitle if present
+    plt.tight_layout(rect=[0, 0, 1, 0.95] if title else None)
     plt.savefig(os.path.join(save_dir, filename), dpi=150)
     plt.close()
 

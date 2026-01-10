@@ -38,7 +38,7 @@ def _write_tuning_metrics(run_dir: str, payload: dict) -> None:
         json.dump(payload, f, indent=2)
 
 
-def train_mlp(args, train_loader, val_loader, run_dir):
+def train_mlp(args, train_loader, val_loader, run_dir, train_subjects=None, val_subjects=None):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
     print(f"Collision threshold: {args.threshold}")
@@ -210,8 +210,8 @@ def train_mlp(args, train_loader, val_loader, run_dir):
                     'epochs': int(args.epochs),
                     'lr': float(args.lr),
                     'batch_size': int(getattr(args, 'batch_size', 0)),
-                    'train_subjects': list(TRAIN_SUBJECTS),
-                    'val_subjects': list(VAL_SUBJECTS),
+                    'train_subjects': list(train_subjects) if train_subjects is not None else list(TRAIN_SUBJECTS),
+                    'val_subjects': list(val_subjects) if val_subjects is not None else list(VAL_SUBJECTS),
                 }
             )
     
