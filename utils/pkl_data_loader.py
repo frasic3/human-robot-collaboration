@@ -552,7 +552,6 @@ def augment_collision_sequences(dataset: CHICODataset, augment_factor: int = 10)
     
     if original_count == 0:
         return
-        return
     
     augmented_samples = []
     
