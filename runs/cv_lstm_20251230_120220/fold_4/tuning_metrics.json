@@ -1,0 +1,14 @@
+{
+  "best_epoch": 3,
+  "best_val_loss": 0.33837818338957837,
+  "best_min_recall": 0.7000147137260672,
+  "best_mean_recall": 0.7479226686262068,
+  "eval_frames": 15,
+  "threshold": 0.1,
+  "risk_weights": [
+    1.0,
+    1.0,
+    5.0
+  ],
+  "augment_factor": 30
+}

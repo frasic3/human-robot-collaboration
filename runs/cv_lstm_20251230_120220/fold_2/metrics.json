@@ -1,0 +1,67 @@
+{
+  "fold": 2,
+  "train_subjects": [
+    "S07",
+    "S03",
+    "S00",
+    "S16",
+    "S05",
+    "S11",
+    "S18",
+    "S02",
+    "S04",
+    "S17",
+    "S01",
+    "S13",
+    "S08"
+  ],
+  "val_subjects": [
+    "S15",
+    "S09",
+    "S14"
+  ],
+  "test_subjects": [
+    "S12",
+    "S10",
+    "S06",
+    "S19"
+  ],
+  "config": {
+    "threshold": 0.1,
+    "risk_weights": [
+      1.0,
+      1.0,
+      5.0
+    ],
+    "augment_factor": 30,
+    "lr": 0.0002,
+    "epochs": 5,
+    "patience": 15,
+    "eval_frames": 15,
+    "seed": 44
+  },
+  "val": {
+    "loss": 0.35183750001358527,
+    "accuracy": 0.6513884639611266,
+    "min_recall_first_k": 0.7050233670932408,
+    "mean_recall_first_k": 0.7754164832083275,
+    "per_class_first_k": {
+      "Safe": 0.8545594158650751,
+      "Near-Collision": 0.7050233670932408,
+      "Collision": 0.7666666666666667
+    },
+    "eval_frames": 15
+  },
+  "test": {
+    "loss": 0.3261887738354859,
+    "accuracy": 0.6675689768237872,
+    "min_recall_first_k": 0.7379821826854158,
+    "mean_recall_first_k": 0.7972749491034584,
+    "per_class_first_k": {
+      "Safe": 0.8386640931963879,
+      "Near-Collision": 0.7379821826854158,
+      "Collision": 0.8151785714285714
+    },
+    "eval_frames": 15
+  }
+}

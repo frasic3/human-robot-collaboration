@@ -1,0 +1,35 @@
+{
+  "best_epoch": 1,
+  "best_val_loss": 0.3793882484498777,
+  "best_collision_recall": 1.0,
+  "best_missed_warnings": 2,
+  "threshold": 0.1,
+  "risk_weights": [
+    1,
+    4,
+    10
+  ],
+  "epochs": 10,
+  "lr": 0.001,
+  "batch_size": 128,
+  "train_subjects": [
+    "S03",
+    "S18",
+    "S16",
+    "S13",
+    "S02",
+    "S09",
+    "S19",
+    "S04",
+    "S12",
+    "S07",
+    "S10",
+    "S14",
+    "S06"
+  ],
+  "val_subjects": [
+    "S08",
+    "S05",
+    "S11"
+  ]
+}

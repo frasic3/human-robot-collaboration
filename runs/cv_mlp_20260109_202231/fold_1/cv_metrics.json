@@ -1,0 +1,184 @@
+{
+  "fold": 1,
+  "train_subjects": [
+    "S03",
+    "S18",
+    "S16",
+    "S13",
+    "S02",
+    "S09",
+    "S19",
+    "S04",
+    "S12",
+    "S07",
+    "S10",
+    "S14",
+    "S06"
+  ],
+  "val_subjects": [
+    "S08",
+    "S05",
+    "S11"
+  ],
+  "test_subjects": [
+    "S00",
+    "S17",
+    "S15",
+    "S01"
+  ],
+  "threshold": 0.1,
+  "metrics": {
+    "val": {
+      "n_samples": 2431,
+      "class_counts": {
+        "Safe": 883,
+        "Near-Collision": 1537,
+        "Collision": 11
+      },
+      "accuracy": 0.7474290415466887,
+      "balanced_accuracy": 0.805319545829769,
+      "macro_f1": 0.5395493405132327,
+      "weighted_f1": 0.7758281453804659,
+      "per_class": [
+        {
+          "class": "Safe",
+          "index": 0,
+          "precision": 0.9960159362549801,
+          "recall": 0.5662514156285391,
+          "f1": 0.7220216606498195,
+          "support": 883
+        },
+        {
+          "class": "Near-Collision",
+          "index": 1,
+          "precision": 0.776918500892326,
+          "recall": 0.8497072218607677,
+          "f1": 0.8116842759477937,
+          "support": 1537
+        },
+        {
+          "class": "Collision",
+          "index": 2,
+          "precision": 0.04435483870967742,
+          "recall": 1.0,
+          "f1": 0.08494208494208494,
+          "support": 11
+        }
+      ],
+      "confusion_matrix": [
+        [
+          500,
+          375,
+          8
+        ],
+        [
+          2,
+          1306,
+          229
+        ],
+        [
+          0,
+          0,
+          11
+        ]
+      ],
+      "confusion_matrix_norm": [
+        [
+          0.5662514156285391,
+          0.4246885617214043,
+          0.009060022650056626
+        ],
+        [
+          0.0013012361743656475,
+          0.8497072218607677,
+          0.14899154196486664
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "collision_recall": 1.0,
+      "missed_warnings_near_to_safe": 2,
+      "roc_auc_ovr_macro": 0.9550139628742648,
+      "pr_auc_ovr_macro": 0.8414246099652489
+    },
+    "test": {
+      "n_samples": 2103,
+      "class_counts": {
+        "Safe": 707,
+        "Near-Collision": 1389,
+        "Collision": 7
+      },
+      "accuracy": 0.7546362339514978,
+      "balanced_accuracy": 0.8141292685269761,
+      "macro_f1": 0.5438693335805694,
+      "weighted_f1": 0.794836735555282,
+      "per_class": [
+        {
+          "class": "Safe",
+          "index": 0,
+          "precision": 0.9821029082774049,
+          "recall": 0.620933521923621,
+          "f1": 0.7608318890814558,
+          "support": 707
+        },
+        {
+          "class": "Near-Collision",
+          "index": 1,
+          "precision": 0.8103693181818182,
+          "recall": 0.8214542836573074,
+          "f1": 0.8158741508759385,
+          "support": 1389
+        },
+        {
+          "class": "Collision",
+          "index": 2,
+          "precision": 0.028225806451612902,
+          "recall": 1.0,
+          "f1": 0.054901960784313725,
+          "support": 7
+        }
+      ],
+      "confusion_matrix": [
+        [
+          439,
+          267,
+          1
+        ],
+        [
+          8,
+          1141,
+          240
+        ],
+        [
+          0,
+          0,
+          7
+        ]
+      ],
+      "confusion_matrix_norm": [
+        [
+          0.620933521923621,
+          0.37765205091937765,
+          0.0014144271570014145
+        ],
+        [
+          0.005759539236861051,
+          0.8214542836573074,
+          0.17278617710583152
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "collision_recall": 1.0,
+      "missed_warnings_near_to_safe": 8,
+      "roc_auc_ovr_macro": 0.9415058634466624,
+      "pr_auc_ovr_macro": 0.6916633193645073
+    }
+  }
+}

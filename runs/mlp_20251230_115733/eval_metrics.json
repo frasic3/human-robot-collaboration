@@ -1,0 +1,37 @@
+{
+  "model": "mlp",
+  "checkpoint": "C:\\Users\\Proprietario\\Desktop\\human-robot-collaboration\\runs\\mlp_20251230_115733\\mlp_best.pth",
+  "data_path": "C:\\Users\\Proprietario\\Desktop\\human-robot-collaboration\\datasets\\3d_skeletons_risk",
+  "threshold": 0.1,
+  "accuracy": 0.8791469194312796,
+  "subjects": {
+    "train": [
+      "S01",
+      "S05",
+      "S06",
+      "S07",
+      "S08",
+      "S09",
+      "S10",
+      "S11",
+      "S12",
+      "S13",
+      "S14",
+      "S15",
+      "S16",
+      "S17"
+    ],
+    "val": [
+      "S00",
+      "S04"
+    ],
+    "test": [
+      "S02",
+      "S03",
+      "S18",
+      "S19"
+    ]
+  },
+  "out_dir": "C:\\Users\\Proprietario\\Desktop\\human-robot-collaboration\\runs\\mlp_20251230_115733",
+  "timestamp": "2026-01-17T19:13:02"
+}
