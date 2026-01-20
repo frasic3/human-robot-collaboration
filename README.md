@@ -1,6 +1,6 @@
 # Predictive Safety and Dynamic Risk Estimation in Human–Robot Collaboration
 
-## Panoramica (dal paper)
+## Panoramica 
 Questo progetto propone una pipeline in due fasi per la stima del rischio in scenari di Human–Robot Collaboration (HRC) usando scheletri 3D (più leggeri e privacy‑preserving rispetto a RGB):
 
 1) **Rischio istantaneo (MLP)**
