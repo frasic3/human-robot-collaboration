@@ -133,15 +133,15 @@ class CHICODataset(Dataset):
                  dataset_path: str,
                  subjects: List[str] = None,
                  actions: List[str] = None,
-                 input_frames: int = 10,  # T frames di input
-                 output_frames: int = 25,  # P frames da predire (1 sec @ 25fps)
+                 input_frames: int = 10,  # T input frames
+                 output_frames: int = 25,  # P frames to predict (1 sec @ 25fps)
                  stride: int = 1,
                  use_crash: bool = True,
                  normalize: bool = True,
                  stats: Tuple[np.ndarray, np.ndarray] = None,
                  mode: str = 'sequence',  # 'sequence' or 'single_frame'
-                 augment_collision: bool = False,  # Data augmentation per classe Collision
-                 augment_factor: int = 200):  # Numero di copie augmentate per ogni sample Collision
+                 augment_collision: bool = False,  # Data augmentation for Collision class
+                 augment_factor: int = 200):  # Number of augmented copies per Collision sample
         """
         Args:
             dataset_path: path to the dataset folder
@@ -272,13 +272,13 @@ class CHICODataset(Dataset):
         return len(self.sequences)
     
     def _augment_collision_samples(self):
-        """
-        Data augmentation per la classe Collision (risk=2).
-        Applica trasformazioni per aumentare i campioni della classe minoritaria.
+        """Data augmentation for the Collision class (risk=2).
+
+        Apply transformations to increase samples for the minority class.
         """
         print("Applying data augmentation to Collision class...")
         
-        # Trova tutti i campioni Collision
+        # Find all Collision samples
         collision_samples = [s for s in self.sequences if s['risk'] == 2]
         original_count = len(collision_samples)
         
@@ -289,7 +289,7 @@ class CHICODataset(Dataset):
         augmented_samples = []
         
         for sample in collision_samples:
-            pose = sample['input'].copy()  # (24, 3) normalizzato
+            pose = sample['input'].copy()  # (24, 3) normalized
             
             for _ in range(self.augment_factor):
                 aug_pose = self._apply_augmentation(pose.copy())
@@ -298,19 +298,19 @@ class CHICODataset(Dataset):
                     'risk': 2  # Collision
                 })
         
-        # Aggiungi i campioni augmentati al dataset
+        # Add augmented samples to the dataset
         self.sequences.extend(augmented_samples)
         print(f"Collision augmentation: {original_count} -> {original_count + len(augmented_samples)} samples (+{len(augmented_samples)})")
     
     def _apply_augmentation(self, pose: np.ndarray) -> np.ndarray:
-        """
-        Applica trasformazioni random a una posa 3D.
+        """Apply random transforms to a 3D pose.
+
         Args:
-            pose: (24, 3) array di joint positions
+            pose: (24, 3) array of joint positions
         Returns:
-            Posa augmentata (24, 3)
+            Augmented pose (24, 3)
         """
-        # Scegli casualmente quali augmentation applicare
+        # Randomly choose which augmentation to apply
         aug_type = np.random.randint(0, 4)
         
         if aug_type == 0:
@@ -325,7 +325,7 @@ class CHICODataset(Dataset):
         
         elif aug_type == 2:
             # 3. Rotation around Y-axis (vertical)
-            angle = np.random.uniform(-15, 15) * np.pi / 180  # +/- 15 gradi
+            angle = np.random.uniform(-15, 15) * np.pi / 180  # +/- 15 degrees
             cos_a, sin_a = np.cos(angle), np.sin(angle)
             rotation_matrix = np.array([
                 [cos_a, 0, sin_a],
@@ -335,7 +335,7 @@ class CHICODataset(Dataset):
             pose = pose @ rotation_matrix.T
         
         elif aug_type == 3:
-            # Joint Dropout (Simulazione errore sensore)
+            # Joint Dropout (sensor error simulation)
             num_dropout = np.random.randint(1, 3) 
             idxs = np.random.choice(pose.shape[0], num_dropout, replace=False)
             pose[idxs] = 0.0
@@ -433,11 +433,11 @@ class CHICODataset(Dataset):
 # Helper functions for WeightedRandomSampler
 def _get_sampling_labels(dataset: CHICODataset) -> np.ndarray:
     """
-    Estrae un array di label (una per sample) usabile per il WeightedRandomSampler.
-    
-    - single_frame: usa direttamente 'risk'
-    - sequence: usa max(output_risk) — se almeno un frame futuro è Collision,
-      l'intero sample è considerato Collision (safety-first)
+        Extract a label array (one per sample) for the WeightedRandomSampler.
+
+        - single_frame: use 'risk' directly
+        - sequence: use max(output_risk) — if any future frame is Collision,
+            the entire sample is considered Collision (safety-first)
     """
     if dataset.mode == 'single_frame':
         return np.array([s['risk'] for s in dataset.sequences], dtype=np.int64)
@@ -445,15 +445,15 @@ def _get_sampling_labels(dataset: CHICODataset) -> np.ndarray:
 
 
 def _augment_sequence_sample(sample: dict, augment_type: int = None) -> dict:
-    """Augmentation avanzata per sequenze (LSTM) preservando la geometria.
+    """Advanced augmentation for sequences (LSTM) while preserving geometry.
 
-    Implementa 4 trasformazioni (scelte a caso con probabilità pesate):
-      0) Time warping (variazione velocità) via interpolazione temporale
-      1) Rotazione globale della scena attorno all'asse Y
-      2) Traslazione globale piccola (shift costante)
-      3) Scaling leggero
+    Implements 4 transforms (random with weighted probabilities):
+        0) Time warping (speed variation) via temporal interpolation
+        1) Global scene rotation around the Y axis
+        2) Small global translation (constant shift)
+        3) Slight scaling
 
-    Nota: il rischio futuro ('output_risk') non cambia.
+    Note: future risk ('output_risk') does not change.
     """
 
     input_seq = sample['input'].copy()
@@ -482,7 +482,7 @@ def _augment_sequence_sample(sample: dict, augment_type: int = None) -> dict:
             out[:, f] = np.interp(new_x, old_x, data_TF[:, f].astype(np.float64)).astype(np.float32)
         return out
 
-    # 0) TIME WARPING (cambio di velocità)
+    # 0) TIME WARPING (speed change)
     if augment_type == 0:
         speed_factor = float(np.random.uniform(0.8, 1.2))
         flat = input_seq_3d.reshape(T, -1).astype(np.float32)
@@ -491,7 +491,7 @@ def _augment_sequence_sample(sample: dict, augment_type: int = None) -> dict:
         flat = _resample_to_length(warped, T)
         input_seq_3d = flat.reshape(input_seq_3d.shape)
 
-    # 1) GLOBAL SCENE ROTATION (sicura: ruota tutto insieme)
+    # 1) GLOBAL SCENE ROTATION (safe: rotates everything together)
     elif augment_type == 1:
         angle_deg = float(np.random.uniform(-45.0, 45.0))
         angle_rad = angle_deg * np.pi / 180.0
@@ -506,14 +506,14 @@ def _augment_sequence_sample(sample: dict, augment_type: int = None) -> dict:
         )
         input_seq_3d = input_seq_3d @ rotation_matrix.T
 
-    # 2) GLOBAL TRANSLATION (shift piccolo)
+    # 2) GLOBAL TRANSLATION (small shift)
     elif augment_type == 2:
         shift_x = float(np.random.uniform(-0.05, 0.05))
         shift_z = float(np.random.uniform(-0.05, 0.05))
         shift_vec = np.array([shift_x, 0.0, shift_z], dtype=np.float32)
         input_seq_3d = input_seq_3d + shift_vec
 
-    # 3) RANDOM SCALING (leggero)
+    # 3) RANDOM SCALING (slight)
     else:
         scale = float(np.random.uniform(0.95, 1.05))
         input_seq_3d = input_seq_3d * scale
@@ -533,12 +533,12 @@ def _augment_sequence_sample(sample: dict, augment_type: int = None) -> dict:
 
 def augment_collision_sequences(dataset: CHICODataset, augment_factor: int = 10) -> None:
     """
-    Data augmentation per sequenze contenenti Collision (per LSTM).
-    Una sequenza è considerata Collision se max(output_risk) == 2.
-    
+    Data augmentation for sequences containing Collision (for LSTM).
+    A sequence is considered Collision if max(output_risk) == 2.
+
     Args:
         dataset: CHICODataset in mode='sequence'
-        augment_factor: numero di copie augmentate per ogni sample Collision
+        augment_factor: number of augmented copies per Collision sample
     """
     if dataset.mode != 'sequence':
         print("Warning: augment_collision_sequences only works with sequence mode")
@@ -546,7 +546,7 @@ def augment_collision_sequences(dataset: CHICODataset, augment_factor: int = 10)
     
     # quiet augmentation (no verbose prints)
     
-    # Trova tutte le sequenze con almeno una Collision
+    # Find all sequences with at least one Collision
     collision_samples = [s for s in dataset.sequences if np.max(s['output_risk']) == 2]
     original_count = len(collision_samples)
     
@@ -560,27 +560,27 @@ def augment_collision_sequences(dataset: CHICODataset, augment_factor: int = 10)
             aug_sample = _augment_sequence_sample(sample)
             augmented_samples.append(aug_sample)
     
-    # Aggiungi i campioni augmentati al dataset
+    # Add augmented samples to the dataset
     dataset.sequences.extend(augmented_samples)
 
 
 def _build_weighted_sampler(labels: np.ndarray, num_classes: int = 3) -> WeightedRandomSampler:
     """
-    Crea un WeightedRandomSampler a partire da label intere.
-    
-    Peso di ogni classe = 1 / (numero di sample in quella classe)
-    → classi rare vengono pescate più spesso
+    Create a WeightedRandomSampler from integer labels.
+
+    Class weight = 1 / (number of samples in that class)
+    → rare classes are sampled more often
     """
     # {0:2000, 1:500, 2:100} 
     class_counts = np.bincount(labels, minlength=num_classes)
     
-    # Evita divisione per zero se una classe è assente
+    # Avoid division by zero if a class is missing
     class_weights = np.zeros(num_classes, dtype=np.float64)
     for c in range(num_classes):
         if class_counts[c] > 0:
             class_weights[c] = 1.0 / class_counts[c]
     
-    # Assegna a ogni sample il peso della sua classe
+    # Assign each sample the weight of its class
     sample_weights = class_weights[labels]
     sample_weights_tensor = torch.from_numpy(sample_weights).double()
     
@@ -592,9 +592,9 @@ def _build_weighted_sampler(labels: np.ndarray, num_classes: int = 3) -> Weighte
 
 
 def _build_weighted_sampler_from_sample_weights(sample_weights: np.ndarray) -> WeightedRandomSampler:
-    """Crea un WeightedRandomSampler direttamente da pesi per-sample."""
+    """Create a WeightedRandomSampler directly from per-sample weights."""
     sample_weights = np.asarray(sample_weights, dtype=np.float64)
-    # clamp minimo per evitare pesi 0
+    # Minimum clamp to avoid zero weights
     sample_weights = np.clip(sample_weights, 1e-12, None)
     sample_weights_tensor = torch.from_numpy(sample_weights).double()
     return WeightedRandomSampler(
@@ -610,13 +610,13 @@ def _build_equal_class_mass_sequence_sampler_with_collision_frames(
     sampler_collision_power: float = 1.0,
     sampler_min_weight: float = 1.0,
 ) -> WeightedRandomSampler:
-    """Sampler per sequenze con massa uguale per classe (Safe/Near/Collision).
+    """Sampler for sequences with equal class mass (Safe/Near/Collision).
 
-    - La classe per-sequenza è definita come max(output_risk) (safety-first).
-    - La probabilità totale di pescare ciascuna classe presente è uguale.
-    - Dentro la classe Collision, le sequenze con più collision-frame pesano di più.
+    - Per-sequence class is defined as max(output_risk) (safety-first).
+    - The total probability of sampling each present class is equal.
+    - Within the Collision class, sequences with more collision frames get higher weight.
 
-    Nota: garantisce bilanciamento *in media sull'epoca* (WeightedRandomSampler).
+    Note: ensures balance *on average over an epoch* (WeightedRandomSampler).
     """
     seq_labels = _get_sampling_labels(train_dataset)  # (N,) in {0,1,2}
     n = len(seq_labels)

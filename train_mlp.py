@@ -48,7 +48,7 @@ def train_mlp(args, train_loader, val_loader, run_dir, train_subjects=None, val_
     
     weights = torch.tensor(RISK_WEIGHTS).float().to(device)
     criterion = nn.CrossEntropyLoss(weight=weights)
-    optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-3)  # Aumentato per regolarizzazione
+    optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-3)  # Increased for regularization
     
     best_val_loss = float('inf')
     best_collision_recall = 0.0
@@ -161,7 +161,7 @@ def train_mlp(args, train_loader, val_loader, run_dir, train_subjects=None, val_
         
         print(f"Epoch {epoch+1}: Val Loss: {avg_val_loss:.4f}")
         
-        # 2. Errori Near->Safe 
+        # 2. Near->Safe errors
         # True Label = 1 (Near), Predicted = 0 (Safe)
         current_missed_warnings = np.sum((val_targets_array == 1) & (val_preds == 0))        
         train_loss_history.append(avg_train_loss)
@@ -171,18 +171,18 @@ def train_mlp(args, train_loader, val_loader, run_dir, train_subjects=None, val_
         
         save_model = False
         
-        # LIVELLO 1: Massimizzare la Sicurezza (Collision Recall)
+        # LEVEL 1: Maximize safety (Collision Recall)
         if current_collision_recall > best_collision_recall:
             save_model = True
             print(f"Improved safety: Recall: {current_collision_recall:.2f}")
             
-        # LIVELLO 2: A parità di sicurezza, Minimizzare i Mancati Preavvisi (Near->Safe)
+        # LEVEL 2: With equal safety, minimize missed warnings (Near->Safe)
         elif current_collision_recall == best_collision_recall:
             if current_missed_warnings < best_missed_warnings:
                 save_model = True
                 print(f"Better warnings: Missed Warnings dropped to {current_missed_warnings}")
             
-            # LIVELLO 3: A parità di recall E missed warnings, Minimizzare la Loss (Precisione generale)
+            # LEVEL 3: With equal recall and missed warnings, minimize loss (overall precision)
             elif current_missed_warnings == best_missed_warnings:
                 if avg_val_loss < best_val_loss:
                     save_model = True
@@ -227,7 +227,7 @@ def train_mlp(args, train_loader, val_loader, run_dir, train_subjects=None, val_
         save_pr_curves(best_val_targets, best_val_probs, CLASS_NAMES, run_dir, 'pr_curves_val.png', info_text=info_val)
         save_metrics_report(best_val_targets, best_val_preds, CLASS_NAMES, run_dir, 'metrics_report_val.png', info_text=info_val)
     
-    # Salva anche le metriche sul training set finale
+    # Also save metrics on the final training set
     print("\nEvaluating on training set...")
     model.eval()
     train_targets_list = []
@@ -308,7 +308,7 @@ if __name__ == "__main__":
     parser.add_argument('--threshold', type=float, default=0.1, help="Collision probability threshold")
     args = parser.parse_args()
     
-    # Seed per riproducibilità
+    # Seed for reproducibility
     torch.manual_seed(42)
     np.random.seed(42)
     random.seed(42)

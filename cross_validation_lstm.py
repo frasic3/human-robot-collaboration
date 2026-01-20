@@ -35,7 +35,7 @@ ALL_SUBJECTS = [
 
 
 def create_cv_splits(subjects, n_folds=5, seed=42):
-    """Crea n_folds split diversi per cross-validation (reproducibile)."""
+    """Create n_folds splits for cross-validation (reproducible)."""
     rng = np.random.default_rng(int(seed))
     subjects_shuffled = list(subjects)
     rng.shuffle(subjects_shuffled)

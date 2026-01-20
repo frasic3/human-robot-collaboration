@@ -32,17 +32,18 @@ def _safe_bincount(arr: np.ndarray, minlength: int = 3) -> np.ndarray:
 
 def compute_per_timestep_metrics(all_targets, all_preds, output_frames, num_classes=3):
 
-    """Calcola metriche per ogni timestep futuro.
+    """Compute metrics for each future timestep.
+
     Args:
-        all_targets: (N, P) array di ground truth per ogni sample
-        all_preds: (N, P) array di predizioni per ogni sample
-        output_frames: P - numero di frame futuri
-        num_classes: numero di classi
+        all_targets: (N, P) array of ground truth per sample
+        all_preds: (N, P) array of predictions per sample
+        output_frames: P - number of future frames
+        num_classes: number of classes
     Returns:
-        dict con:
-        - accuracy_per_step: (P,) accuracy per ogni timestep
-        - recall_per_class_per_step: (num_classes, P) recall per classe/timestep
-        - precision_per_class_per_step: (num_classes, P) precision per classe/timestep
+        dict with:
+        - accuracy_per_step: (P,) accuracy per timestep
+        - recall_per_class_per_step: (num_classes, P) recall per class/timestep
+        - precision_per_class_per_step: (num_classes, P) precision per class/timestep
     """
     N = all_targets.shape[0]
     P = output_frames
@@ -70,7 +71,7 @@ def compute_per_timestep_metrics(all_targets, all_preds, output_frames, num_clas
 
 def save_temporal_recall_curve(metrics, save_dir, filename='temporal_recall_curve.png', class_names=None):
 
-    """Curva di Recall Temporale per ogni classe."""
+    """Temporal recall curve for each class."""
     if class_names is None:
         class_names = DEFAULT_CLASS_NAMES
     P = metrics['recall_per_class_per_step'].shape[1]
@@ -82,9 +83,9 @@ def save_temporal_recall_curve(metrics, save_dir, filename='temporal_recall_curv
         recall = metrics['recall_per_class_per_step'][c]
         plt.plot(timesteps, recall, '-o', color=color, label=f'{class_name}',
                  linewidth=2, markersize=4)
-    plt.xlabel('Orizzonte Temporale (Frame Futuro)', fontsize=12)
+    plt.xlabel('Temporal Horizon (Future Frame)', fontsize=12)
     plt.ylabel('Recall', fontsize=12)
-    plt.title('Curva di Recall Temporale - Degradazione della Predizione', fontsize=14)
+    plt.title('Temporal Recall Curve - Prediction Degradation', fontsize=14)
     plt.legend(loc='lower left', fontsize=11)
     plt.grid(True, alpha=0.3)
     plt.ylim(0, 1.05)
@@ -101,7 +102,7 @@ def save_temporal_recall_curve(metrics, save_dir, filename='temporal_recall_curv
 
 def save_temporal_heatmap(all_targets, all_preds, output_frames, save_dir, filename='temporal_heatmap.png', class_names=None):
 
-    """Heatmap Temporale delle predizioni (recall per classe e timestep)."""
+    """Temporal heatmap of predictions (recall per class and timestep)."""
     if class_names is None:
         class_names = DEFAULT_CLASS_NAMES
     P = output_frames
@@ -120,9 +121,9 @@ def save_temporal_heatmap(all_targets, all_preds, output_frames, save_dir, filen
                      yticklabels=class_names,
                      vmin=0, vmax=1,
                      annot_kws={"size": 8})
-    plt.xlabel('Frame Futuro', fontsize=12)
-    plt.ylabel('Classe Vera', fontsize=12)
-    plt.title('Heatmap Temporale: Recall per Classe e Orizzonte', fontsize=14)
+    plt.xlabel('Future Frame', fontsize=12)
+    plt.ylabel('True Class', fontsize=12)
+    plt.title('Temporal Heatmap: Recall by Class and Horizon', fontsize=14)
     ax.axhline(y=2, color='red', linewidth=3)
     ax.axhline(y=3, color='red', linewidth=3)
     plt.tight_layout()
@@ -240,7 +241,7 @@ def compute_event_level_recall(all_targets, all_preds, min_consecutive=1):
 
 def compute_flicker_rate(all_preds):
 
-    """Flicker Rate (Tasso di Sfarfallio)."""
+    """Flicker rate."""
     N, P = all_preds.shape
     flicker_counts = []
     for i in range(N):
@@ -260,22 +261,22 @@ def compute_flicker_rate(all_preds):
 
 def save_stability_analysis(all_preds, save_dir, filename='stability_analysis.png'):
 
-    """Visualizza l'analisi della stabilità delle predizioni."""
+    """Show prediction stability analysis."""
     flicker_stats = compute_flicker_rate(all_preds)
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
     axes[0].hist(flicker_stats['flicker_histogram'], bins=20, color='#3498db', edgecolor='white', alpha=0.8)
     axes[0].axvline(flicker_stats['mean_flicker'], color='red', linestyle='--', linewidth=2,
-                    label=f"Media: {flicker_stats['mean_flicker']:.2f}")
-    axes[0].set_xlabel('Numero di Cambi di Classe', fontsize=12)
-    axes[0].set_ylabel('Frequenza', fontsize=12)
-    axes[0].set_title('Distribuzione del Flicker Rate', fontsize=14)
+                    label=f"Mean: {flicker_stats['mean_flicker']:.2f}")
+    axes[0].set_xlabel('Number of Class Changes', fontsize=12)
+    axes[0].set_ylabel('Frequency', fontsize=12)
+    axes[0].set_title('Flicker Rate Distribution', fontsize=14)
     axes[0].legend()
     axes[0].grid(True, alpha=0.3)
     axes[1].boxplot(flicker_stats['flicker_histogram'], vert=True)
-    axes[1].set_ylabel('Numero di Cambi di Classe', fontsize=12)
-    axes[1].set_title('Box Plot Flicker Rate', fontsize=14)
+    axes[1].set_ylabel('Number of Class Changes', fontsize=12)
+    axes[1].set_title('Flicker Rate Box Plot', fontsize=14)
     axes[1].grid(True, alpha=0.3)
-    stats_text = f"Media: {flicker_stats['mean_flicker']:.2f}\n"
+    stats_text = f"Mean: {flicker_stats['mean_flicker']:.2f}\n"
     stats_text += f"Std: {flicker_stats['std_flicker']:.2f}\n"
     stats_text += f"Min: {flicker_stats['min_flicker']}\n"
     stats_text += f"Max: {flicker_stats['max_flicker']}"
@@ -289,7 +290,7 @@ def save_stability_analysis(all_preds, save_dir, filename='stability_analysis.pn
 
 def save_forecast_plots(all_targets, all_preds, save_dir, num_samples=10, filename_prefix='forecast'):
 
-    """Crea grafici che confrontano ground truth e predizioni."""
+    """Create plots comparing ground truth and predictions."""
     N, P = all_targets.shape
     collision_indices = np.where(np.any(all_targets == 2, axis=1))[0]
     if len(collision_indices) < num_samples:
@@ -321,8 +322,8 @@ def save_forecast_plots(all_targets, all_preds, save_dir, num_samples=10, filena
         ax.scatter(timesteps, pred, c=colors, s=30, zorder=5, edgecolors='blue')
         ax.set_yticks([0, 1, 2])
         ax.set_yticklabels(['Safe', 'Near', 'Coll'])
-        ax.set_xlabel('Frame Futuro')
-        ax.set_ylabel('Classe')
+        ax.set_xlabel('Future Frame')
+        ax.set_ylabel('Class')
         ax.set_title(f'Sample {sample_idx}')
         ax.legend(loc='upper right', fontsize=8)
         ax.grid(True, alpha=0.3)
@@ -338,7 +339,7 @@ def save_forecast_plots(all_targets, all_preds, save_dir, num_samples=10, filena
 
 def save_aggregated_forecast_plot(all_targets, all_preds, save_dir, filename='forecast_aggregated.png', class_names=None):
 
-    """Grafico aggregato che mostra la distribuzione delle predizioni nel tempo."""
+    """Aggregated plot showing prediction distribution over time."""
     if class_names is None:
         class_names = DEFAULT_CLASS_NAMES
     N, P = all_targets.shape
@@ -353,9 +354,9 @@ def save_aggregated_forecast_plot(all_targets, all_preds, save_dir, filename='fo
             gt_dist[c, t] = np.mean(all_targets[:, t] == c)
     axes[0].stackplot(timesteps, gt_dist[0], gt_dist[1], gt_dist[2],
                       labels=class_names, colors=colors, alpha=0.8)
-    axes[0].set_xlabel('Frame Futuro', fontsize=12)
-    axes[0].set_ylabel('Proporzione', fontsize=12)
-    axes[0].set_title('Distribuzione Ground Truth nel Tempo', fontsize=14)
+    axes[0].set_xlabel('Future Frame', fontsize=12)
+    axes[0].set_ylabel('Proportion', fontsize=12)
+    axes[0].set_title('Ground Truth Distribution Over Time', fontsize=14)
     axes[0].legend(loc='upper right')
     axes[0].set_xlim(1, P)
     axes[0].set_ylim(0, 1)
@@ -368,9 +369,9 @@ def save_aggregated_forecast_plot(all_targets, all_preds, save_dir, filename='fo
             pred_dist[c, t] = np.mean(all_preds[:, t] == c)
     axes[1].stackplot(timesteps, pred_dist[0], pred_dist[1], pred_dist[2],
                       labels=class_names, colors=colors, alpha=0.8)
-    axes[1].set_xlabel('Frame Futuro', fontsize=12)
-    axes[1].set_ylabel('Proporzione', fontsize=12)
-    axes[1].set_title('Distribuzione Predizioni nel Tempo', fontsize=14)
+    axes[1].set_xlabel('Future Frame', fontsize=12)
+    axes[1].set_ylabel('Proportion', fontsize=12)
+    axes[1].set_title('Prediction Distribution Over Time', fontsize=14)
     axes[1].legend(loc='upper right')
     axes[1].set_xlim(1, P)
     axes[1].set_ylim(0, 1)
@@ -382,7 +383,7 @@ def save_aggregated_forecast_plot(all_targets, all_preds, save_dir, filename='fo
 
 def save_confusion_matrix_forecasting(y_true, y_pred, class_names, save_dir, filename='confusion_matrix.png'):
 
-    """Salva la matrice di confusione aggregata su tutti i timestep (forecasting)."""
+    """Save the confusion matrix aggregated over all timesteps (forecasting)."""
     cm = confusion_matrix(np.asarray(y_true).flatten(), np.asarray(y_pred).flatten())
     plt.figure(figsize=(10, 8))
     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
@@ -407,7 +408,7 @@ def save_metrics_summary(
     header: str | None = None,
 ):
 
-    """Salva un riepilogo visivo di tutte le metriche (forecasting)."""
+    """Save a visual summary of all metrics (forecasting)."""
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
     if title:
         fig.suptitle(str(title), fontsize=16, fontweight='bold')
@@ -417,9 +418,9 @@ def save_metrics_summary(
     collision_recall = metrics_dict['recall_per_class_per_step'][2]
     ax1.fill_between(timesteps, collision_recall, alpha=0.3, color='red')
     ax1.plot(timesteps, collision_recall, 'r-o', linewidth=2, markersize=4)
-    ax1.set_xlabel('Frame Futuro')
-    ax1.set_ylabel('Recall Collision')
-    ax1.set_title('Degradazione Recall Collision')
+    ax1.set_xlabel('Future Frame')
+    ax1.set_ylabel('Collision Recall')
+    ax1.set_title('Collision Recall Degradation')
     ax1.set_ylim(0, 1.05)
     ax1.grid(True, alpha=0.3)
     ax1.axhline(y=0.8, color='green', linestyle='--', alpha=0.5, label='Target 80%')
@@ -429,9 +430,9 @@ def save_metrics_summary(
     values = [mat_stats['anticipated_count'], mat_stats['detected_at_moment'], mat_stats['missed_count']]
     colors = ['#2ecc71', '#f39c12', '#e74c3c']
     bars = ax2.bar(categories, values, color=colors, edgecolor='black')
-    ax2.set_ylabel('Numero di Collisioni')
+    ax2.set_ylabel('Number of Collisions')
     ax2.set_title(
-        f"Anticipazione Collisioni (MAT: {mat_stats['mat_frames']:.1f} frame = {mat_stats['mat_seconds']:.2f}s)"
+        f"Collision Anticipation (MAT: {mat_stats['mat_frames']:.1f} frames = {mat_stats['mat_seconds']:.2f}s)"
     )
     for bar, val in zip(bars, values):
 
@@ -451,22 +452,22 @@ def save_metrics_summary(
     ax4 = axes[1, 1]
     ax4.axis('off')
     summary_text = "=" * 40 + "\n"
-    summary_text += (str(header) if header else "RIEPILOGO METRICHE FORECASTING") + "\n"
+    summary_text += (str(header) if header else "FORECASTING METRICS SUMMARY") + "\n"
     summary_text += "=" * 40 + "\n\n"
     summary_text += "PER-TIMESTEP:\n"
     summary_text += f"  • Recall Collision @+1:  {collision_recall[0]:.2%}\n"
     summary_text += f"  • Recall Collision @+{P}: {collision_recall[-1]:.2%}\n"
-    summary_text += f"  • Recall Medio:          {np.mean(collision_recall):.2%}\n\n"
-    summary_text += "ANTICIPAZIONE:\n"
-    summary_text += f"  • MAT: {mat_stats['mat_frames']:.1f} frame ({mat_stats['mat_seconds']:.2f}s)\n"
+    summary_text += f"  • Mean Recall:           {np.mean(collision_recall):.2%}\n\n"
+    summary_text += "ANTICIPATION:\n"
+    summary_text += f"  • MAT: {mat_stats['mat_frames']:.1f} frames ({mat_stats['mat_seconds']:.2f}s)\n"
     summary_text += f"  • Anticipation Rate: {mat_stats['anticipation_rate']:.1%}\n"
     summary_text += f"  • Detection Rate: {mat_stats['detection_rate']:.1%}\n\n"
     summary_text += "EVENT-LEVEL:\n"
     summary_text += f"  • Event Recall: {event_stats['event_recall']:.1%}\n"
-    summary_text += f"  • Sequenze Rilevate: {event_stats['detected_sequences']}/{event_stats['total_collision_sequences']}\n\n"
-    summary_text += "STABILITA':\n"
-    summary_text += f"  • Flicker Medio: {flicker_stats['mean_flicker']:.2f} cambi/seq\n"
-    summary_text += f"  • Flicker Max: {flicker_stats['max_flicker']} cambi/seq\n"
+    summary_text += f"  • Detected Sequences: {event_stats['detected_sequences']}/{event_stats['total_collision_sequences']}\n\n"
+    summary_text += "STABILITY:\n"
+    summary_text += f"  • Mean Flicker: {flicker_stats['mean_flicker']:.2f} changes/seq\n"
+    summary_text += f"  • Max Flicker: {flicker_stats['max_flicker']} changes/seq\n"
     ax4.text(0.1, 0.9, summary_text, transform=ax4.transAxes, fontsize=11,
              verticalalignment='top', fontfamily='monospace',
              bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
@@ -478,7 +479,7 @@ def save_metrics_summary(
 
 def comprehensive_evaluation(all_targets, all_preds, all_probs, output_frames, save_dir, prefix='', class_names=None):
 
-    """Esegue la valutazione completa per forecasting e salva tutti i grafici."""
+    """Run a full forecasting evaluation and save all plots."""
     if class_names is None:
         class_names = DEFAULT_CLASS_NAMES
 
@@ -525,7 +526,7 @@ def comprehensive_evaluation(all_targets, all_preds, all_probs, output_frames, s
 
 
 def save_training_curves(train_losses, val_losses, train_accs, val_accs, save_dir):
-    """Salva le curve di loss e accuracy per training e validation."""
+    """Save loss and accuracy curves for training and validation."""
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
     
     # Loss
@@ -552,7 +553,7 @@ def save_training_curves(train_losses, val_losses, train_accs, val_accs, save_di
 
 
 def save_confusion_matrix(y_true, y_pred, class_names, save_dir, filename='confusion_matrix.png', info_text=None):
-    """Salva la matrice di confusione come heatmap."""
+    """Save the confusion matrix as a heatmap."""
     cm = confusion_matrix(y_true, y_pred)
     
     plt.figure(figsize=(10, 8))
@@ -573,13 +574,13 @@ def save_confusion_matrix(y_true, y_pred, class_names, save_dir, filename='confu
 
 
 def save_pr_curves(y_true, y_probs, class_names, save_dir, filename='pr_curves.png', info_text=None):
-    """Salva le curve Precision-Recall per ogni classe."""
+    """Save Precision-Recall curves for each class."""
     n_classes = len(class_names)
     y_true_bin = label_binarize(y_true, classes=range(n_classes))
     
     plt.figure(figsize=(10, 8))
     
-    colors = ['#2ecc71', '#f39c12', '#e74c3c']  # Verde, Arancione, Rosso
+    colors = ['#2ecc71', '#f39c12', '#e74c3c']  # Green, orange, red
     
     for i in range(n_classes):
         precision, recall, _ = precision_recall_curve(y_true_bin[:, i], y_probs[:, i])
@@ -603,10 +604,10 @@ def save_pr_curves(y_true, y_probs, class_names, save_dir, filename='pr_curves.p
 
 
 def save_metrics_report(y_true, y_pred, class_names, save_dir, filename='metrics_report.png', info_text=None):
-    """Salva il report delle metriche come immagine PNG."""
+    """Save the metrics report as a PNG image."""
     report = classification_report(y_true, y_pred, target_names=class_names, digits=4, output_dict=True)
     
-    # Prepara i dati per la tabella
+    # Prepare table data
     metrics = ['precision', 'recall', 'f1-score', 'support']
     rows = class_names + ['accuracy', 'macro avg', 'weighted avg']
     
@@ -634,12 +635,12 @@ def save_metrics_report(y_true, y_pred, class_names, save_dir, filename='metrics
     table.set_fontsize(11)
     table.scale(1.2, 1.8)
     
-    # Colora l'header
+    # Color the header
     for j in range(len(metrics)):
         table[(0, j)].set_facecolor('#4472C4')
         table[(0, j)].set_text_props(color='white', fontweight='bold')
     
-    # Colora le righe delle classi
+    # Color class rows
     colors = ['#E2EFDA', '#FFF2CC', '#FCE4D6']
     for i, row in enumerate(rows):
         if i < len(class_names):
@@ -656,7 +657,7 @@ def save_metrics_report(y_true, y_pred, class_names, save_dir, filename='metrics
 
 
 def save_per_class_metrics(y_true, y_pred, class_names, save_dir, filename='per_class_metrics.png'):
-    """Salva un grafico a barre con precision, recall, f1 per ogni classe."""
+    """Save a bar chart with precision, recall, and f1 per class."""
     precision = precision_score(y_true, y_pred, average=None, zero_division=0)
     recall = recall_score(y_true, y_pred, average=None, zero_division=0)
     f1 = f1_score(y_true, y_pred, average=None, zero_division=0)
@@ -677,7 +678,7 @@ def save_per_class_metrics(y_true, y_pred, class_names, save_dir, filename='per_
     ax.set_ylim(0, 1.1)
     ax.grid(True, alpha=0.3, axis='y')
     
-    # Aggiungi valori sopra le barre
+    # Add values above bars
     for bars in [bars1, bars2, bars3]:
         for bar in bars:
             height = bar.get_height()

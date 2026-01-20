@@ -199,17 +199,17 @@ def save_val_artifacts(args, model, val_loader, run_dir, device):
 def apply_collision_threshold(probs, threshold):
 
     """
-    Applica threshold sulla probabilità di Collision.
+    Apply a threshold to the Collision probability.
     Args:
-        probs: (N, P, 3) probabilità per ogni classe
-        threshold: soglia per classe Collision
+        probs: (N, P, 3) probabilities for each class
+        threshold: threshold for the Collision class
     Returns:
-        (N, P) predizioni con threshold applicato
+        (N, P) predictions with threshold applied
     """
     N, P, _ = probs.shape
-    # Predizione di default: argmax su Safe e Near
+    # Default prediction: argmax over Safe and Near
     preds = np.argmax(probs[:, :, :2], axis=2)  # (N, P)
-    # Override con Collision se prob >= threshold
+    # Override with Collision if prob >= threshold
     collision_probs = probs[:, :, 2]  # (N, P)
     preds[collision_probs >= threshold] = 2
     return preds
@@ -217,7 +217,7 @@ def apply_collision_threshold(probs, threshold):
 
 def train_lstm(args, model, train_loader, val_loader, run_dir, device):
 
-    """Main training loop con weighted loss e threshold."""
+    """Main training loop with weighted loss and threshold."""
     risk_weights = tuple(getattr(args, 'risk_weights', RISK_WEIGHTS))
     print(f"Using device: {device}")
     print(f"Collision threshold: {args.threshold}")
@@ -245,7 +245,7 @@ def train_lstm(args, model, train_loader, val_loader, run_dir, device):
     best_val_targets = None
     best_val_probs = None
     epochs_no_improve = 0
-    # Assicurati che la cartella run_dir esista
+    # Ensure the run_dir folder exists
     os.makedirs(run_dir, exist_ok=True)
     try:
         for epoch in range(args.epochs):

@@ -1,6 +1,6 @@
-"""
-Visualizzazione 3D degli scheletri per analisi errori
-Dataset CHICO: 15 joint umani + 9 joint robot
+"""3D skeleton visualization for error analysis.
+
+CHICO dataset: 15 human joints + 9 robot joints.
 """
 import numpy as np
 import matplotlib.pyplot as plt
@@ -29,19 +29,19 @@ ROBOT_CONNECTIONS = [
 
 def plot_skeleton_3d(skeleton_data, title="3D Skeleton", save_path=None):
     """
-    Visualizza scheletro umano (15 joint) + robot (9 joint)
-    
+    Visualize human skeleton (15 joints) + robot (9 joints).
+
     Args:
-        skeleton_data: array (72,) o (24, 3) - primi 15 joint umano, ultimi 9 robot
-        title: titolo del grafico
-        save_path: percorso dove salvare l'immagine
+        skeleton_data: array (72,) or (24, 3) - first 15 human joints, last 9 robot
+        title: plot title
+        save_path: path to save the image
     """
-    # Reshape se necessario
+    # Reshape if needed
     if skeleton_data.shape[0] == 72:
         skeleton_data = skeleton_data.reshape(24, 3)
     
-    human_joints = skeleton_data[:15]  # Primi 15 joint
-    robot_joints = skeleton_data[15:]  # Ultimi 9 joint
+    human_joints = skeleton_data[:15]  # First 15 joints
+    robot_joints = skeleton_data[15:]  # Last 9 joints
     
     fig = plt.figure(figsize=(14, 10))
     ax = fig.add_subplot(111, projection='3d')
@@ -70,7 +70,7 @@ def plot_skeleton_3d(skeleton_data, title="3D Skeleton", save_path=None):
         z = [robot_joints[joint1, 2], robot_joints[joint2, 2]]
         ax.plot(x, y, z, 'r-', linewidth=2, alpha=0.6)
     
-    # Labels per joint chiave umano
+    # Labels for key human joints
     human_labels = {
         0: 'Nose', 1: 'Neck', 2: 'R-Shoulder', 5: 'L-Shoulder',
         4: 'R-Wrist', 7: 'L-Wrist', 8: 'R-Hip', 11: 'L-Hip'
@@ -79,7 +79,7 @@ def plot_skeleton_3d(skeleton_data, title="3D Skeleton", save_path=None):
         ax.text(human_joints[joint_id, 0], human_joints[joint_id, 1], 
                 human_joints[joint_id, 2], label, fontsize=7, color='darkblue')
     
-    # Label per base e end-effector robot
+    # Labels for robot base and end-effector
     ax.text(robot_joints[0, 0], robot_joints[0, 1], robot_joints[0, 2],
             'Robot Base', fontsize=7, color='darkred')
     ax.text(robot_joints[8, 0], robot_joints[8, 1], robot_joints[8, 2],
@@ -91,7 +91,7 @@ def plot_skeleton_3d(skeleton_data, title="3D Skeleton", save_path=None):
     ax.set_title(title, fontsize=14, fontweight='bold')
     ax.legend()
     
-    # Set equal aspect ratio per tutti gli assi
+    # Set equal aspect ratio for all axes
     all_joints = skeleton_data
     max_range = np.array([all_joints[:, 0].max() - all_joints[:, 0].min(),
                           all_joints[:, 1].max() - all_joints[:, 1].min(),
@@ -117,26 +117,26 @@ def plot_skeleton_3d(skeleton_data, title="3D Skeleton", save_path=None):
 def visualize_missed_collision(skeleton_data, probs, true_label, pred_label, 
                                class_names, sample_idx, threshold, save_path):
     """
-    Visualizza scheletro umano + robot con informazioni sulla predizione errata
-    
+    Visualize human + robot skeleton with incorrect prediction info.
+
     Args:
-        skeleton_data: array (72,) o (24, 3) - 15 joint umano + 9 joint robot
-        probs: array (3,) - probabilità delle 3 classi
-        true_label: int - label vera
-        pred_label: int - label predetta
-        class_names: list - nomi delle classi
-        sample_idx: int - indice del sample
-        threshold: float - soglia usata
-        save_path: str - percorso dove salvare
+        skeleton_data: array (72,) or (24, 3) - 15 human joints + 9 robot joints
+        probs: array (3,) - probabilities for the 3 classes
+        true_label: int - true label
+        pred_label: int - predicted label
+        class_names: list - class names
+        sample_idx: int - sample index
+        threshold: float - threshold used
+        save_path: str - path to save
     """
-    # Reshape se necessario
+    # Reshape if needed
     if skeleton_data.shape[0] == 72:
         skeleton_data = skeleton_data.reshape(24, 3)
     
     human_joints = skeleton_data[:15]
     robot_joints = skeleton_data[15:]
     
-    # Crea figura con 2 subplot
+    # Create figure with 2 subplots
     fig = plt.figure(figsize=(18, 8))
     
     # Subplot 1: Skeleton 3D
@@ -166,13 +166,13 @@ def visualize_missed_collision(skeleton_data, probs, true_label, pred_label,
         z = [robot_joints[joint1, 2], robot_joints[joint2, 2]]
         ax1.plot(x, y, z, 'r-', linewidth=3, alpha=0.7)
     
-    # Calcola distanza minima
+    # Compute minimum distance
     diff = human_joints[:, None, :] - robot_joints[None, :, :]
     dists = np.linalg.norm(diff, axis=-1)
     min_dist = dists.min()
     min_idx = np.unravel_index(dists.argmin(), dists.shape)
     
-    # Disegna linea di distanza minima
+    # Draw minimum-distance line
     closest_human = human_joints[min_idx[0]]
     closest_robot = robot_joints[min_idx[1]]
     ax1.plot([closest_human[0], closest_robot[0]], 
@@ -201,11 +201,11 @@ def visualize_missed_collision(skeleton_data, probs, true_label, pred_label,
     ax1.set_ylim(mid_y - max_range, mid_y + max_range)
     ax1.set_zlim(mid_z - max_range, mid_z + max_range)
     
-    # Subplot 2: Info e probabilità
+    # Subplot 2: Info and probabilities
     ax2 = fig.add_subplot(122)
     ax2.axis('off')
     
-    # Testo informativo
+    # Info text
     info_text = f"""
 PREDICTION ANALYSIS
 {'='*50}
@@ -267,7 +267,7 @@ This is a FALSE NEGATIVE (missed collision).
              verticalalignment='center', bbox=dict(boxstyle='round', 
              facecolor='wheat', alpha=0.5))
     
-    # Bar chart delle probabilità
+    # Probability bar chart
     ax3 = fig.add_axes([0.6, 0.1, 0.3, 0.25])
     colors = ['green' if i == true_label else 'red' if i == pred_label else 'gray' 
               for i in range(3)]

@@ -1,8 +1,8 @@
-"""Cross-validation per MLP (frame-based) con metriche aggregate.
+"""Cross-validation for MLP (frame-based) with aggregated metrics.
 
-Questo script esegue una K-fold cross-validation sui soggetti, allenando un MLP
-su frame singoli e valutando metriche standard per ogni fold + statistiche
-aggregate (mean/std/CI 95%).
+This script runs K-fold cross-validation over subjects, training an MLP
+on single frames and computing standard metrics per fold plus aggregate
+statistics (mean/std/95% CI).
 """
 
 import os
@@ -17,7 +17,7 @@ from train_mlp import train_mlp, test_mlp, CLASS_NAMES
 from utils.pkl_data_loader import create_pkl_dataloaders
 from models.mlp import RiskMLP
 
-# Tutti i soggetti disponibili
+# All available subjects
 ALL_SUBJECTS = [
     'S00', 'S01', 'S02', 'S03', 'S04', 'S05', 'S06', 'S07', 'S08', 'S09',
     'S10', 'S11', 'S12', 'S13', 'S14', 'S15', 'S16', 'S17', 'S18', 'S19'
@@ -25,9 +25,9 @@ ALL_SUBJECTS = [
 
 
 def create_cv_splits(subjects, n_folds=5):
-    """
-    Crea n_folds split diversi per cross-validation.
-    Ogni fold usa soggetti diversi per train/val/test.
+    """Create n_folds splits for cross-validation.
+
+    Each fold uses distinct subjects for train/val/test.
     """
     n_subjects = len(subjects)
     subjects_shuffled = subjects.copy()
@@ -37,15 +37,15 @@ def create_cv_splits(subjects, n_folds=5):
     fold_size = n_subjects // n_folds
     
     for i in range(n_folds):
-        # Test: fold corrente
+        # Test: current fold
         test_start = i * fold_size
         test_end = test_start + fold_size if i < n_folds - 1 else n_subjects
         test_subjects = subjects_shuffled[test_start:test_end]
         
-        # Rimangono gli altri per train+val
+        # Remaining subjects for train+val
         remaining = [s for s in subjects_shuffled if s not in test_subjects]
         
-        # Val: 20% dei rimanenti (circa 2-3 soggetti)
+        # Val: 20% of remaining (about 2-3 subjects)
         n_val = max(1, len(remaining) // 5)
         val_subjects = remaining[:n_val]
         train_subjects = remaining[n_val:]
@@ -84,7 +84,7 @@ def _safe_import_sklearn_metrics():
 
 
 def _apply_collision_threshold(probs: np.ndarray, threshold: float) -> np.ndarray:
-    """Applica la logica: argmax tra classi (0,1) e forza classe 2 se p(collision) >= threshold."""
+    """Apply logic: argmax over classes (0,1) and force class 2 if p(collision) >= threshold."""
     if probs.ndim != 2 or probs.shape[1] < 3:
         raise ValueError('probs must have shape (N, 3)')
     collision_probs = probs[:, 2]
@@ -117,7 +117,7 @@ def _collect_targets_and_probs(model, loader, device) -> tuple[np.ndarray, np.nd
 def _compute_metrics(y_true: np.ndarray, y_prob: np.ndarray, threshold: float, class_names: list[str]):
     sk = _safe_import_sklearn_metrics()
     if sk is None:
-        # Fallback minimal (senza sklearn)
+        # Minimal fallback (without sklearn)
         y_pred = _apply_collision_threshold(y_prob, threshold)
         acc = float(np.mean(y_pred == y_true)) if len(y_true) else 0.0
         return {
@@ -155,12 +155,12 @@ def _compute_metrics(y_true: np.ndarray, y_prob: np.ndarray, threshold: float, c
     row_sums = cm_norm.sum(axis=1, keepdims=True)
     cm_norm = np.divide(cm_norm, row_sums, out=np.zeros_like(cm_norm), where=row_sums != 0)
 
-    # Collision recall = recall della classe 2
+    # Collision recall = recall of class 2
     collision_recall = float(recall[2]) if len(recall) >= 3 else 0.0
 
     missed_warnings = int(np.sum((y_true == 1) & (y_pred == 0)))
 
-    # AUC (probabilità raw, non thresholded). Gestione fold con classi mancanti.
+    # AUC (raw probabilities, not thresholded). Handle folds with missing classes.
     roc_auc = None
     pr_auc = None
     try:
@@ -170,7 +170,7 @@ def _compute_metrics(y_true: np.ndarray, y_prob: np.ndarray, threshold: float, c
         if len(present) >= 2:
             roc_auc = float(sk['roc_auc_score'](y_true_oh, y_prob, average='macro', multi_class='ovr'))
 
-            # PR-AUC macro OVR: media delle AP per classe presente
+            # PR-AUC macro OVR: mean AP over present classes
             per_class_ap = []
             for c in range(3):
                 if np.any(y_true == c) and np.any(y_true != c):
@@ -226,7 +226,7 @@ def _aggregate_scalar(values: list[float | None]):
     vmin = float(np.min(arr))
     vmax = float(np.max(arr))
 
-    # CI 95% (approssimazione normale) : mean ± 1.96 * std/sqrt(n)
+    # 95% CI (normal approximation): mean ± 1.96 * std/sqrt(n)
     ci95 = None
     if n >= 2:
         half = 1.96 * std / float(np.sqrt(n))
@@ -244,32 +244,32 @@ def _aggregate_scalar(values: list[float | None]):
 
 
 def evaluate_model(model, loader, threshold, device, class_names: list[str]):
-    """Valuta il modello su un loader e ritorna metriche standard."""
+    """Evaluate a model on a loader and return standard metrics."""
     y_true, y_prob = _collect_targets_and_probs(model, loader, device)
     return _compute_metrics(y_true, y_prob, threshold, class_names)
 
 
 def run_cross_validation(args):
-    """Esegue cross-validation con diverse configurazioni di split"""
+    """Run cross-validation with different split configurations."""
     
     # Setup seed
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
     
-    # Crea cartella principale per CV
+    # Create main CV folder
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     cv_dir = os.path.join('runs', f'cv_mlp_{timestamp}')
     os.makedirs(cv_dir, exist_ok=True)
     print(f"Cross-Validation directory: {cv_dir}")
     
-    # Crea gli split
+    # Create splits
     splits = create_cv_splits(ALL_SUBJECTS, n_folds=args.n_folds)
     
-    # Salva gli split in un file
+    # Save splits to a file
     with open(os.path.join(cv_dir, 'splits.json'), 'w') as f:
         json.dump(splits, f, indent=2)
     
-    # Risultati per ogni fold
+    # Results for each fold
     fold_results: list[dict] = []
     
     for split in splits:
@@ -281,14 +281,14 @@ def run_cross_validation(args):
         print(f"Val:   {split['val']}")
         print(f"Test:  {split['test']}")
         
-        # Crea directory per questo fold
+        # Create directory for this fold
         fold_dir = os.path.join(cv_dir, f'fold_{fold_num}')
         os.makedirs(fold_dir, exist_ok=True)
         
-        # Seed per fold (riproducibile ma diverso)
+        # Per-fold seed (reproducible but different)
         fold_seed = int(args.seed + fold_num)
 
-        # Carica i dati
+        # Load data
         train_loader, val_loader, test_loader, stats = create_pkl_dataloaders(
             dataset_path=args.data_path,
             train_subjects=split['train'],
@@ -319,11 +319,11 @@ def run_cross_validation(args):
             val_subjects=split['val'],
         )
         
-        # Test con visualizzazioni complete
+        # Test with full visualizations
         print(f"\n--- Testing Fold {fold_num} (with visualizations) ---")
         test_mlp(args, test_loader, fold_dir)
         
-        # Calcola metriche addizionali
+        # Compute additional metrics
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         model = RiskMLP(input_size=72, hidden_sizes=[128, 64], num_classes=3).to(device)
         model.load_state_dict(torch.load(os.path.join(fold_dir, 'mlp_best.pth'), map_location=device, weights_only=True))
@@ -331,7 +331,7 @@ def run_cross_validation(args):
         metrics_test = evaluate_model(model, test_loader, args.threshold, device, CLASS_NAMES)
         metrics_val = evaluate_model(model, val_loader, args.threshold, device, CLASS_NAMES)
         
-        # Salva metriche del fold
+        # Save fold metrics
         fold_payload = {
             'fold': fold_num,
             'train_subjects': split['train'],
@@ -352,11 +352,11 @@ def run_cross_validation(args):
         print(f"  [Val ] Acc={metrics_val['accuracy']:.4f} | BalAcc={metrics_val['balanced_accuracy']:.4f} | MacroF1={metrics_val['macro_f1']:.4f} | CollRecall={metrics_val['collision_recall']:.4f}")
         print(f"  [Test] Acc={metrics_test['accuracy']:.4f} | BalAcc={metrics_test['balanced_accuracy']:.4f} | MacroF1={metrics_test['macro_f1']:.4f} | CollRecall={metrics_test['collision_recall']:.4f}")
     
-    # Salva tutte le metriche dei fold
+    # Save all fold metrics
     with open(os.path.join(cv_dir, 'cv_metrics_folds.json'), 'w', encoding='utf-8') as f:
         json.dump({'folds': fold_results}, f, indent=2)
 
-    # Calcola statistiche aggregate
+    # Compute aggregated statistics
     print(f"\n{'='*60}")
     print("CROSS-VALIDATION SUMMARY")
     print(f"{'='*60}")
